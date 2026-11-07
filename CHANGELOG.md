@@ -7,6 +7,19 @@ Firmware được phát hành dưới định dạng **Factory All-in-One** (đ�
 
 ---
 
+## [2.8.15-portrait.2] - 2026-11-07 (ESP32-S3)
+
+- Triển khai UI dọc v2 đã duyệt: giờ/ngày/âm lượng bên trái, quãng đường/thời gian ở giữa, giờ đến/ETA bên phải; dành vùng dưới cho nhiều cảnh báo và bỏ hướng dẫn thao tác.
+- Số tốc độ và biển giới hạn dùng glyph khử răng cưa ở kích thước thật; mũi tên làn lớn hơn, nét cong; căn số lối ra theo tâm từng hình bùng binh. Đổi “HẠ TỐC ĐỘ” thành “TỐC ĐỘ TIẾP THEO”.
+- Sửa phép nhân PCM sai dấu gây méo âm; âm lượng 0 tắt tiếng đang phát. Thêm tùy chọn loa HUD, mặc định tắt để không phát trùng điện thoại; không điều khiển tiếng Waze trên điện thoại.
+- Bù trục ngang LCD ở chế độ dọc và cập nhật ánh xạ cảm ứng tương ứng. Khi xem trực tiếp, tắt tùy chọn phản chiếu từng dùng để khắc phục lỗi cũ.
+- Chạm sang đồng hồ khi đang dẫn đường không bị lượt rẽ cũ kéo về HUD; tự về khi có sự kiện khẩn mới sau khoảng bảo vệ 5 giây.
+- Giữ đồng hồ Optimus/Bumblebee và lịch âm. Schema cấu hình 12 mục, phiên bản 9; nâng cấp giữ cài đặt có sẵn.
+
+## [2.8.15-portrait.1] - 2026-11-07 (ESP32-S3)
+
+- Mốc lưu trước UI v2: bố cục dọc 240×320, đồng hồ Optimus/Bumblebee, chạm đổi trang, giữ xem thống kê, vuốt điều chỉnh âm lượng 0–100% và cấu hình qua app.
+
 ## [v2.8.16-s3-r4] - 2026-10-18 (ESP32-S3)
 
 Vẫn nền B16 (không gộp B17 của quangdo92), firmware báo số phiên bản nội bộ `2.8.15`.

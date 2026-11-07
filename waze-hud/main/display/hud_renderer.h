@@ -2,6 +2,7 @@
 
 #include "config/device_config.h"
 #include "display/bitmap_font.h"
+#include "display/auto_return.h"
 #include "display/layout.h"
 #include "state/hud_state.h"
 #include "state/trip_stats.h"
@@ -74,6 +75,7 @@ private:
     bool clockActive_{false};
     bool bumblebeeClock_{false};
     uint8_t page_{0}; // 0: HUD, 1: clock, 2: trip
+    AutoReturn autoReturn_{};
     bool adaptiveActive_{false};
     uint64_t volumeUntilMs_{0};
     uint64_t lastVolumeChangeMs_{0};

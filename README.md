@@ -50,6 +50,7 @@ python -m esptool --chip esp32s3 -p COM5 -b 460800 write_flash 0x0 ES3C28P-BLE-1
 - Ảnh nền và thuật toán lịch âm được chuyển từ [bugatino/wazehud-esp32](https://github.com/bugatino/wazehud-esp32); bảng dữ liệu lịch âm có nguồn từ gói MIT `lunar` v2.0.0 của 6tail.
 
 ### 🔊 Cảnh báo quá tốc độ bằng giọng nói
+- Từ `2.8.15-portrait.2`, loa HUD mặc định **tắt** để tránh phát trùng với điện thoại. Bật **"Canh bao qua loa HUD"** trong app nếu muốn nghe loa box; khi đó cần tắt âm thanh Waze trên điện thoại nếu chỉ muốn nghe một nguồn. Firmware chưa có lệnh điều khiển tiếng điện thoại.
 - Phát câu **"Bạn đã quá tốc độ"** qua loa khi tốc độ vượt giới hạn + ngưỡng (chỉnh trong app) liên tục **1,5 giây**.
 - Lặp lại mỗi **4 giây** (tính từ lúc đọc xong) nếu vẫn quá tốc độ. Về tốc độ cho phép thì ngừng.
 - Dùng codec **ES8311** + bộ khuếch đại của board. Nếu không tìm thấy codec, HUD vẫn chạy bình thường (chỉ ghi cảnh báo vào log).
@@ -100,6 +101,7 @@ Khi Waze Mod hỗ trợ `device_config` (schema version 8), HUD gửi lên 11 th
 | Xoay màn hình | Bật / Tắt | Xoay 180° theo hướng lắp |
 | Hiển thị dọc | Bật / Tắt | Tắt: ngang 320×240; bật: dọc 240×320; độc lập với đảo 180° |
 | Âm lượng loa | 0–100%, bước 5% | 0 = im lặng; vẫn hiện cảnh báo trên màn hình |
+| Cảnh báo qua loa HUD | Bật / Tắt | Mặc định tắt; bật khi muốn dùng loa box thay cho tiếng điện thoại |
 | Ngưỡng quá tốc | −10 đến +5 km/h | Bù vào giới hạn trước khi cảnh báo (áp dụng cả cho giọng nói) |
 | Dịch ngang | −5 đến +5 px | Tinh chỉnh vị trí giao diện |
 | Dịch dọc | −5 đến +5 px | Tinh chỉnh vị trí giao diện |
@@ -127,13 +129,15 @@ Khi Waze Mod hỗ trợ `device_config` (schema version 8), HUD gửi lên 11 th
 - Giữ khoảng 0,8 giây: mở/đóng thống kê chuyến đi; chạm để quay về HUD.
 - Vuốt lên/xuống: tăng/giảm 5% mỗi khoảng 20 px, chặn ở 0–100%. Vuốt không phát sinh thao tác chạm.
 - Hiện thanh âm lượng 1,5 giây; lưu NVS khi thả tay hoặc sau 1 giây không có bước chỉnh mới. 0% tắt cả tiếng đang phát, vẫn giữ cảnh báo thị giác.
-- Tự về HUD khi có lượt rẽ cách ≤300 m, cảnh báo cách ≤100 m hoặc quá tốc độ (chỉ với dữ liệu còn hợp lệ).
+- Khi mở đồng hồ/thống kê, giữ trang ít nhất 5 giây. Chỉ tự về HUD khi xuất hiện sự kiện khẩn **mới**: lượt rẽ cách ≤300 m, cảnh báo cách ≤100 m hoặc quá tốc độ (dữ liệu còn hợp lệ). Lượt rẽ cũ đang ở 0 m không làm bật lại HUD ngay sau khi chạm.
 - Hướng dọc/ngang, đảo 180°, phản chiếu và âm lượng được lưu khi mất nguồn. App cần nhận lại schema sau thay đổi cấu hình bằng thao tác trên box.
-- Không tự thay ETA bằng thống kê sau mỗi 5 phút. Màn dọc dùng một thanh giờ duy nhất, ETA ghi rõ “ĐẾN NƠI”.
+- Màn dọc: trái là giờ/ngày và trạng thái loa, giữa là quãng đường/thời gian còn lại, phải là giờ đến/ETA (không có ETA thì hiện BLE). Bỏ ETA phía dưới và các dòng hướng dẫn thao tác.
+- Hiện tối đa 2 cảnh báo khi có làn đường, 3 khi không có làn đường và 5 khi chạy tự do; `+N` cho biết số cảnh báo còn lại. Biển giới hạn sắp tới ghi “TỐC ĐỘ TIẾP THEO”.
+- Số tốc độ/biển giới hạn dùng bitmap khử răng cưa ở đúng kích thước; làn đường dùng nét cong, tối đa 5 làn đang xem, ưu tiên vùng làn được chọn.
 - FT6336G dùng I²C 0x38 trên SDA16/SCL15, chia sẻ bus với ES8311. ES3N28P không có cảm ứng vẫn chạy HUD và cấu hình qua app; firmware ghi log nếu không tìm thấy chip cảm ứng.
 
-Firmware `2.8.15-portrait.1` đã kiểm tra bằng host preview, sanitizer, test gesture/ánh xạ, test cấu hình và build ESP-IDF. Chạm/vuốt vật lý, hướng tọa độ thực tế, loa và giao diện app vẫn cần thử trên thiết bị.
-File factory gộp nạp ở `0x0` có thể ghi đè vùng cấu hình NVS; cần chọn lại cấu hình sau khi nạp. Mất nguồn thông thường vẫn giữ cấu hình. Mặc định khi chưa có cấu hình là ngang, âm lượng 50%.
+Firmware `2.8.15-portrait.2` được kiểm tra bằng host preview, sanitizer, test gesture/ánh xạ, test cấu hình, toàn dải PCM và build ESP-IDF. Chạm/vuốt vật lý, hướng tọa độ thực tế, loa và giao diện app vẫn cần thử trên thiết bị.
+File factory gộp nạp ở `0x0` có thể ghi đè vùng cấu hình NVS; cần chọn lại cấu hình sau khi nạp. Mất nguồn thông thường vẫn giữ cấu hình. Mặc định khi chưa có cấu hình là ngang, âm lượng 50%, loa HUD tắt. Schema hiện có 12 mục, phiên bản 9; giữ lại cài đặt cũ khi nâng cấp. Nếu từng bật phản chiếu để chữa lỗi chữ ngược ở màn dọc, hãy tắt phản chiếu sau khi nâng cấp để xem trực tiếp.
 Tham chiếu thanh ghi cảm ứng: [Espressif FT5x06 driver](https://github.com/espressif/esp-bsp/blob/master/components/lcd_touch/esp_lcd_touch_ft5x06/esp_lcd_touch_ft5x06.c).
 
 ---

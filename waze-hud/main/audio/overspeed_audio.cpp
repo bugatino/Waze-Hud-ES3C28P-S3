@@ -5,6 +5,7 @@
 #if CONFIG_WAZE_HUD_BOARD_ES3C28P && CONFIG_WAZE_HUD_AUDIO_ALERT
 
 #include "audio/overspeed_voice.h"
+#include "audio/pcm_gain.h"
 #include "config/device_config.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
@@ -63,7 +64,7 @@ esp_err_t initCodec() {
             continue;
         }
         (void)es8311_sample_frequency_config(codec, kMclkHz, kSampleRate);
-        (void)es8311_voice_volume_set(codec, 90, nullptr);
+        (void)es8311_voice_volume_set(codec, 75, nullptr);
         ESP_LOGI(kTag, "ES8311 ready at I2C 0x%02X", static_cast<unsigned>(address));
         return ESP_OK;
     }
@@ -97,10 +98,11 @@ void writeFrames(const int16_t *mono, std::size_t count) {
     std::size_t done = 0;
     while (done < count) {
         const std::size_t frames = std::min<std::size_t>(kFramesPerChunk, count - done);
-        const unsigned volume = DeviceConfig::instance().snapshot().volume;
+        const auto settings = DeviceConfig::instance().snapshot();
+        const unsigned volume = settings.hudAudioEnabled ? settings.volume : 0;
         if (volume == 0) gpio_set_level(kAmpEnable, 1);
         for (std::size_t i = 0; i < frames; ++i) {
-            chunk[2 * i] = static_cast<int16_t>(static_cast<int32_t>(mono[done + i]) * volume / 100);
+            chunk[2 * i] = scalePcm(mono[done + i], volume);
             chunk[2 * i + 1] = chunk[2 * i];
         }
         std::size_t written = 0;
@@ -154,7 +156,8 @@ void playVoice() {
 #endif
 
 void playAlert() {
-    if (DeviceConfig::instance().snapshot().volume == 0) return;
+    const auto settings = DeviceConfig::instance().snapshot();
+    if (!settings.hudAudioEnabled || settings.volume == 0) return;
     gpio_set_level(kAmpEnable, 0);  // Active-low enable.
     vTaskDelay(pdMS_TO_TICKS(30));
 #if CONFIG_WAZE_HUD_AUDIO_USE_VOICE
@@ -178,7 +181,7 @@ bool isOverspeed() {
     const DeviceSettings settings = DeviceConfig::instance().snapshot();
     const int threshold =
         std::max(0, state.speedLimitKmh + static_cast<int>(settings.overspeedOffsetKmh));
-    return settings.volume > 0 && state.connected && state.hasProducerState && !state.signalStale &&
+    return settings.hudAudioEnabled && settings.volume > 0 && state.connected && state.hasProducerState && !state.signalStale &&
            state.speedLimitKmh > 0 && state.speedKmh > threshold;
 }
 

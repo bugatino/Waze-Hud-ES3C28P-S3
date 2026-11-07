@@ -17,7 +17,7 @@ $flags = @('-std=gnu++17', '-O1', '-Wno-nullability-completeness',
 if ($Lanes -eq 'card') { $flags += '-DCONFIG_WAZE_HUD_LANES_CARD=1' }        # as in the CYD sdkconfig.defaults
 if ($Lanes -eq 'corner') { $flags += '-DCONFIG_WAZE_HUD_LANES_CORNER=1' }
 $sources = @("$main\display\hud_renderer.cpp", "$main\display\bitmap_font.cpp",
-             "$main\assets\generated_assets.cpp", "$main\state\trip_stats.cpp",
+             "$main\assets\generated_assets.cpp", "$main\assets\portrait_assets.cpp", "$main\state\trip_stats.cpp",
              "$main\system\lunar_calendar.c",
              "$main\ota\wifi_ota_manager_stub.cpp")
 

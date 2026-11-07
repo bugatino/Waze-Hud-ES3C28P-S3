@@ -1,0 +1,29 @@
+{
+  "version": "2.8.15-portrait.2",
+  "date": "2026-11-07",
+  "target": "esp32s3 / ES3C28P",
+  "idf": "5.5.5",
+  "factory": "waze_hud_es3c28p_portrait_v2_factory_20261107.bin",
+  "factoryOffset": "0x0",
+  "factorySha256": "ebf75a2a30b0d4ccc147f71565de4937fc8dc8383620243ae93842743445e769",
+  "factoryBytes": 2220816,
+  "app": "waze_hud_es3c28p_portrait_v2_app_20261107.bin",
+  "appSha256": "fdca9e7f154963f536bd75dddf9a6e8d73575fecafcf3427289fe9268d15bf58",
+  "appBytes": 2089744,
+  "partitionBytes": 3145728,
+  "checks": [
+    "ESP-IDF S3 build and partition size check",
+    "esptool valid application checksum and validation hash",
+    "ASan/UBSan host renderer: 21 maneuvers and 75 alerts",
+    "Existing zero-metre turn stays on manually selected clock after six seconds; new urgent turn returns HUD",
+    "614400 orientation round trips, absolute portrait compensation points and gesture classification",
+    "458752 signed PCM/gain checks and manual-view return policy",
+    "Schema 12 items; v7/v8 migration to v9, persistence, validation, concurrent revision and NVS failure"
+  ],
+  "hardwareVerified": false,
+  "remainingDeviceChecks": [
+    "Physical LCD orientation and touch coordinates",
+    "Physical speaker gain and silence at zero",
+    "Real WazeMod BLE config schema save and reconnect"
+  ]
+}

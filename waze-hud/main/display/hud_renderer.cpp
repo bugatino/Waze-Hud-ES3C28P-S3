@@ -1,4 +1,5 @@
 #include "display/hud_renderer.h"
+#include "assets/portrait_assets.h"
 
 #include "display/colors.h"
 #include "display/display_driver.h"
@@ -124,7 +125,7 @@ bool guidanceChanged(const HudState &a, const HudState &b) {
 
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
     return a.fixedBrightness != b.fixedBrightness || a.brightness != b.brightness ||
-           a.portraitDisplay != b.portraitDisplay || a.volume != b.volume ||
+           a.portraitDisplay != b.portraitDisplay || a.volume != b.volume || a.hudAudioEnabled != b.hudAudioEnabled ||
            a.theme != b.theme || a.invertColor != b.invertColor ||
            a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
            a.overspeedOffsetKmh != b.overspeedOffsetKmh ||
@@ -661,19 +662,38 @@ const assets::AlphaMask *maneuverAsset(Maneuver maneuver) {
     }
 }
 
-void drawRoundaboutExit(Canvas &canvas, int exit, uint16_t color) {
+void drawNativeCentered(Canvas &canvas, int cx, int cy, const char *text,
+                        const assets::BitmapFont &font, uint16_t color) {
+    int x0=INT32_MAX,y0=INT32_MAX,x1=INT32_MIN,y1=INT32_MIN,advance=0;
+    for(const unsigned char *s=reinterpret_cast<const unsigned char *>(text);*s;++s){
+        for(std::size_t i=0;i<font.glyphCount;++i){
+            const auto &g=font.glyphs[i];
+            if(g.codepoint!=*s)continue;
+            if(g.width&&g.height){x0=std::min(x0,advance+g.xOffset);x1=std::max(x1,advance+g.xOffset+g.width);
+                y0=std::min<int>(y0,g.yOffset);y1=std::max<int>(y1,g.yOffset+g.height);}
+            advance+=g.advance;break;
+        }
+    }
+    if(x0!=INT32_MAX)canvas.fontText(cx-(x0+x1)/2,cy-(y0+y1)/2,text,font,color);
+}
+
+void drawRoundaboutExit(Canvas &canvas, Maneuver maneuver, int exit, uint16_t color) {
     if (exit <= 0) return;
     char number[12];
     std::snprintf(number,sizeof(number),"%d",exit);
-    constexpr int centerX = 42;
-    constexpr int width = 36;
+    // The directional assets have different ring centers inside their 60px
+    // canvas. Center the ink in the actual ring, not in the asset's rectangle.
+    int centerX = 42;
 #if CONFIG_WAZE_HUD_DISPLAY_CYD_28
-    constexpr int centerY = 54;
+    int centerY = 64;
 #else
-    const int centerY = mainY(65);
+    int centerY = mainY(65);
 #endif
-    canvas.fontText(centerX-width/2, centerY - assets::kNumberMedium.lineHeight/2,
-                    number, assets::kNumberMedium, color, width, true);
+    if (maneuver == Maneuver::RoundaboutRight) { centerX -= 10; centerY -= 8; }
+    else if (maneuver == Maneuver::RoundaboutLeft) { centerX += 10; centerY -= 8; }
+    else if (maneuver == Maneuver::RoundaboutStraight) { centerY += 3; }
+    else if (maneuver == Maneuver::RoundaboutUTurn) { centerX += 4; centerY -= 10; }
+    drawNativeCentered(canvas,centerX,centerY,number,assets::kHudExit,color);
 }
 
 enum class SpeedSignContext { Current, AlertLarge, AlertSmall };
@@ -711,7 +731,7 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
     if (const assets::AlphaMask *asset = maneuverAsset(maneuver)) {
         canvas.alphaMask(12, maneuverAssetY, *asset, color);
         if (isRoundaboutManeuver(maneuver) && exit > 0) {
-            drawRoundaboutExit(canvas,exit,color);
+            drawRoundaboutExit(canvas,maneuver,exit,color);
         }
         return;
     }
@@ -728,7 +748,7 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
         if (maneuver == Maneuver::RoundaboutStraight) {
             canvas.line(cx, roundaboutCenterY - 20, cx, top, color, thick);
             arrowHead(canvas, cx, top, 0, -1, color, 3);
-            drawRoundaboutExit(canvas,exit,color);
+            drawRoundaboutExit(canvas,Maneuver::Roundabout,exit,color);
             return;
         }
         if (maneuver == Maneuver::RoundaboutUTurn) {
@@ -736,14 +756,14 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
             canvas.line(cx - 19, roundaboutCenterY, endX, roundaboutCenterY, color, thick);
             canvas.line(endX, roundaboutCenterY, endX, roundaboutCenterY + 13, color, thick);
             arrowHead(canvas, endX, roundaboutCenterY + 13, 0, 1, color, 3);
-            drawRoundaboutExit(canvas,exit,color);
+            drawRoundaboutExit(canvas,Maneuver::Roundabout,exit,color);
             return;
         }
         const bool left = maneuver == Maneuver::RoundaboutLeft;
         const int endX = left ? cx - 27 : cx + 27;
         canvas.line(left ? cx - 19 : cx + 19, roundaboutCenterY, endX, roundaboutCenterY, color, thick);
         arrowHead(canvas, endX, roundaboutCenterY, left ? -1 : 1, 0, color, 3);
-        drawRoundaboutExit(canvas,exit,color);
+        drawRoundaboutExit(canvas,Maneuver::Roundabout,exit,color);
         return;
     }
     if (maneuver == Maneuver::UTurn || maneuver == Maneuver::UTurnRightReserved) {
@@ -835,7 +855,7 @@ const char *alertKindLabel(AlertKind kind) {
         case AlertKind::Accident: return "TAI NẠN";
         case AlertKind::TrafficJam: return "ÙN TẮC";
         case AlertKind::RoadClosed: return "CẤM ĐƯỜNG";
-        case AlertKind::SpeedDrop: return "HẠ TỐC ĐỘ";
+        case AlertKind::SpeedDrop: return "TỐC ĐỘ TIẾP THEO";
         case AlertKind::NoPassing: return "CẤM VƯỢT";
         case AlertKind::EndNoPassing: return "HẾT CẤM VƯỢT";
         case AlertKind::Railway: return "ĐƯỜNG SẮT";
@@ -1329,12 +1349,38 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
     const bool shouldMarquee = state.connected && state.hasProducerState &&
                                streetWidth > availableStreetWidth;
     const uint64_t nowMs = static_cast<uint64_t>(esp_timer_get_time() / 1000);
+    // Identify critical events without hashing continuously changing distances.
+    // A manual clock selection acknowledges the current event, so the same
+    // zero-metre maneuver cannot immediately bounce it back to the HUD.
+    uint64_t eventKey = 1469598103934665603ULL;
+    bool hasUrgentEvent = false;
+    auto mix = [&](uint64_t v) { eventKey = (eventKey ^ v) * 1099511628211ULL; };
+    const bool fresh = state.connected && state.hasProducerState && !state.signalStale;
+    if(fresh){
+        if(state.navigationActive && state.maneuver!=Maneuver::None &&
+           state.maneuverDistanceM>=0 && state.maneuverDistanceM<=300){
+            hasUrgentEvent=true;mix(1);mix(static_cast<uint8_t>(state.maneuver));mix(state.roundaboutExit);
+            for(unsigned char ch:state.nextStreet){if(!ch)break;mix(ch);}
+        }
+        AlertState alerts[8]{};const int count=collectSortedAlerts(state,alerts,8);
+        for(int i=0;i<count;++i)if(alerts[i].distanceM>=0&&alerts[i].distanceM<=100){
+            hasUrgentEvent=true;mix(2);mix(static_cast<uint8_t>(alerts[i].kind));mix(alerts[i].valueKmh);
+        }
+        if(firmwareOverspeed(state,settings)){hasUrgentEvent=true;mix(3);mix(state.speedLimitKmh);}
+    }
+    if(hasUrgentEvent)mix(state.sessionId);else eventKey=0;
     bool interactionChanged = false;
     for (auto event = TouchSensor::instance().takeEvent(); event != TouchEvent::None;
          event = TouchSensor::instance().takeEvent()) {
         interactionChanged = true;
-        if (event == TouchEvent::Tap) page_ = page_ == 0 ? 1 : 0;
-        if (event == TouchEvent::Hold) page_ = page_ == 2 ? 0 : 2;
+        if (event == TouchEvent::Tap) {
+            page_ = page_ == 0 ? 1 : 0;
+            autoReturn_.manualView(nowMs,eventKey);
+        }
+        if (event == TouchEvent::Hold) {
+            page_ = page_ == 2 ? 0 : 2;
+            autoReturn_.manualView(nowMs,eventKey);
+        }
         if (event == TouchEvent::VolumeUp || event == TouchEvent::VolumeDown) {
             const auto volume = DeviceConfig::instance().snapshot().volume;
             const int change = event == TouchEvent::VolumeUp ? 5 : -5;
@@ -1352,16 +1398,7 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         volumeDirty_ = DeviceConfig::instance().persistVolume() != ESP_OK;
         lastVolumeChangeMs_ = nowMs;
     }
-    AlertState alertsForReturn[8]{};
-    const int alertsForReturnCount = collectSortedAlerts(state, alertsForReturn, 8);
-    bool closeAlert = false;
-    for (int i = 0; i < alertsForReturnCount; ++i)
-        if (alertsForReturn[i].distanceM >= 0 && alertsForReturn[i].distanceM <= 100) closeAlert = true;
-    const bool fresh = state.connected && state.hasProducerState && !state.signalStale;
-    const bool urgent = fresh && ((state.navigationActive && state.maneuver != Maneuver::None &&
-        state.maneuverDistanceM >= 0 && state.maneuverDistanceM <= 300) ||
-        firmwareOverspeed(state, settings) || closeAlert);
-    if (urgent && page_ != 0) { page_ = 0; interactionChanged = true; }
+    if (autoReturn_.update(nowMs,eventKey) && page_ != 0) { page_ = 0; interactionChanged = true; }
     if (interactionChanged) firstFrame_ = true;
     adaptiveActive_ = settings.portraitDisplay || page_ != 0 || volumeUntilMs_ != 0 || volumeDirty_;
     if (volumeUntilMs_ != 0 && nowMs >= volumeUntilMs_) {

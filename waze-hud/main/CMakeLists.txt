@@ -25,6 +25,7 @@ idf_component_register(
         "display/hud_renderer.cpp"
         "display/bitmap_font.cpp"
         "assets/generated_assets.cpp"
+        "assets/portrait_assets.cpp"
         "config/device_config.cpp"
         "system/system_status.cpp"
         "system/shared_i2c.cpp"

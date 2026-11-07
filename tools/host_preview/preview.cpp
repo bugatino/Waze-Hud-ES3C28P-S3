@@ -139,7 +139,7 @@ int main() {
     DeviceSettings portrait{}; portrait.portraitDisplay=true;
     { auto s=base(); shot("v01_navigation",s,portrait); lanes(s);shot("v02_lanes",s,portrait);
       alerts(s,{{AlertKind::SpeedCamera,300,0},{AlertKind::Police,600,0}});shot("v03_lanes_alert",s,portrait);
-      s.maneuver=Maneuver::RoundaboutRight;s.roundaboutExit=3;shot("v04_roundabout",s,portrait);
+      s.maneuver=Maneuver::RoundaboutRight;s.roundaboutExit=4;shot("v04_roundabout",s,portrait);
       s.speedKmh=130;s.speedLimitKmh=120;shot("v05_overspeed",s,portrait);
       s.signalStale=true;s.hasProducerState=false;shot("v06_stale",s,portrait); }
     {auto s=base();s.navigationActive=false;s.maneuver=Maneuver::None;shot("v07_free",s,portrait);
@@ -155,9 +155,16 @@ int main() {
       for(int m=0;m<=20;++m){s.maneuver=static_cast<Maneuver>(m);s.localGeneration++;g_nowUs+=100000;r.render(s,g_config,{});}
       for(int a=1;a<=75;++a){s.nearestAlert={static_cast<AlertKind>(a),150,50,4,18};s.localGeneration++;g_nowUs+=100000;r.render(s,g_config,{});}
       std::puts("All 21 maneuver codes and 75 alert codes rendered in portrait");}
-    {auto s=base();g_config=portrait;HudRenderer r;r.init();r.render(s,g_config,{});
+    {auto s=base();s.speedKmh=50;s.maneuver=Maneuver::Roundabout;s.roundaboutExit=4;s.maneuverDistanceM=0;
+      alerts(s,{{AlertKind::SpeedDrop,1500,80},{AlertKind::Police,1800,0},{AlertKind::Hazard,2200,0},{AlertKind::Railway,2500,0}});
+      shot("v20_device_regression",s,portrait);lanes(s);shot("v21_multiple_alerts_lanes",s,portrait);}
+    {auto s=base();s.maneuverDistanceM=0;g_config=portrait;HudRenderer r;r.init();r.render(s,g_config,{});
       g_events.push_back(TouchEvent::Tap);g_nowUs+=100000;r.render(s,g_config,{});dump("v15_tap_clock");
-      s.maneuverDistanceM=50;g_nowUs+=100000;r.render(s,g_config,{});dump("v16_auto_return");
+      const auto clockPixel=g_fb[200*240+50];
+      g_nowUs+=6000000;r.render(s,g_config,{});dump("v16_existing_turn_stays_clock");
+      assert(g_fb[200*240+50]==clockPixel); // Existing 0m turn must not cancel manual clock.
+      s.maneuver=Maneuver::Right;s.localGeneration++;g_nowUs+=100000;r.render(s,g_config,{});dump("v22_new_turn_returns_hud");
+      assert(g_fb[200*240+50]!=clockPixel);
       g_events.push_back(TouchEvent::Hold);s.maneuverDistanceM=600;g_nowUs+=100000;r.render(s,g_config,{});dump("v17_trip");
       g_events.push_back(TouchEvent::Tap);g_config.volume=5;g_events.push_back(TouchEvent::VolumeDown);
       g_nowUs+=100000;r.render(s,g_config,{});g_nowUs+=100000;r.render(s,g_config,{});dump("v18_mute");

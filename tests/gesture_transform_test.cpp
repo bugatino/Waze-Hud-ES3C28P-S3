@@ -4,6 +4,10 @@
 #include <cstdio>
 using namespace waze_hud;
 int main() {
+    assert(toNative({0,0},true,false,false).x==239);
+    assert(toNative({0,0},true,false,true).x==0);
+    assert(fromNative({239,0},true,false,false).x==0);
+    assert(toNative({0,0},false,false,false).x==0);
     for(bool portrait:{false,true})for(bool rotate:{false,true})for(bool mirror:{false,true}){
         const int w=portrait?240:320,h=portrait?320:240;
         for(int y=0;y<h;++y)for(int x=0;x<w;++x){
