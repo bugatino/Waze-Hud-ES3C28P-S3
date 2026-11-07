@@ -6,6 +6,9 @@
 
 #include "audio/overspeed_voice.h"
 #include "audio/pcm_gain.h"
+#include "audio/guidance_planner.h"
+#include "audio/speech_message.h"
+#include "audio/mulaw.h"
 #include "config/device_config.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
@@ -13,6 +16,7 @@
 #include "es8311.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "state/hud_state_store.h"
@@ -40,10 +44,11 @@ constexpr int kMclkHz = kSampleRate * 256;
 constexpr int kFramesPerChunk = 256;
 constexpr float kPi = 3.14159265F;
 
-constexpr TickType_t kDebounceTicks = pdMS_TO_TICKS(1500);
-constexpr TickType_t kRepeatTicks = pdMS_TO_TICKS(CONFIG_WAZE_HUD_AUDIO_REPEAT_SEC * 1000);
-
 i2s_chan_handle_t txChannel = nullptr;
+GuidancePlanner planner(CONFIG_WAZE_HUD_AUDIO_REPEAT_SEC*1000);
+Announcement activeAnnouncement;
+bool playing=false,cancelled=false;
+uint64_t nowMs(){return static_cast<uint64_t>(esp_timer_get_time()/1000);}
 
 float volumeScale() { return 0.85F; }
 
@@ -97,10 +102,14 @@ void writeFrames(const int16_t *mono, std::size_t count) {
     std::array<int16_t, kFramesPerChunk * 2> chunk{};
     std::size_t done = 0;
     while (done < count) {
+        if(cancelled)return;
         const std::size_t frames = std::min<std::size_t>(kFramesPerChunk, count - done);
         const auto settings = DeviceConfig::instance().snapshot();
-        const unsigned volume = settings.hudAudioEnabled ? settings.volume : 0;
-        if (volume == 0) gpio_set_level(kAmpEnable, 1);
+        if(playing&&!planner.canContinue(activeAnnouncement,HudStateStore::instance().snapshot(),settings,nowMs())){
+            cancelled=true;gpio_set_level(kAmpEnable,1);return;
+        }
+        const unsigned volume = settings.volume;
+        gpio_set_level(kAmpEnable, volume == 0 ? 1 : 0);
         for (std::size_t i = 0; i < frames; ++i) {
             chunk[2 * i] = scalePcm(mono[done + i], volume);
             chunk[2 * i + 1] = chunk[2 * i];
@@ -117,7 +126,7 @@ void playTone(float frequencyHz, int durationMs) {
     const float amplitude = 32767.0F * volumeScale();
     std::array<int16_t, kFramesPerChunk> samples{};
     std::size_t index = 0;
-    while (index < total) {
+    while (index < total && !cancelled) {
         const std::size_t count = std::min<std::size_t>(kFramesPerChunk, total - index);
         for (std::size_t i = 0; i < count; ++i) {
             const std::size_t n = index + i;
@@ -137,7 +146,7 @@ void playTone(float frequencyHz, int durationMs) {
 void playSilence(int durationMs) {
     const std::size_t total = static_cast<std::size_t>(kSampleRate) * durationMs / 1000;
     std::array<int16_t, kFramesPerChunk> zeros{};
-    for (std::size_t done = 0; done < total; done += kFramesPerChunk)
+    for (std::size_t done = 0; done < total && !cancelled; done += kFramesPerChunk)
         writeFrames(zeros.data(), std::min<std::size_t>(kFramesPerChunk, total - done));
 }
 
@@ -145,7 +154,7 @@ void playSilence(int durationMs) {
 void playVoice() {
     const float scale = volumeScale();
     std::array<int16_t, kFramesPerChunk> samples{};
-    for (std::size_t done = 0; done < kOverspeedVoiceSamples; done += kFramesPerChunk) {
+    for (std::size_t done = 0; done < kOverspeedVoiceSamples && !cancelled; done += kFramesPerChunk) {
         const std::size_t count =
             std::min<std::size_t>(kFramesPerChunk, kOverspeedVoiceSamples - done);
         for (std::size_t i = 0; i < count; ++i)
@@ -153,11 +162,28 @@ void playVoice() {
         writeFrames(samples.data(), count);
     }
 }
+
+void playGuidance(const Announcement &a){
+    const auto message=speechMessage(a);
+    std::array<int16_t,kFramesPerChunk> samples{};
+    for(std::size_t word=0;word<message.count&&!cancelled;++word){
+        const auto clip=speechClip(message.prompts[word]);
+        for(std::size_t pos=0;pos<clip.samples&&!cancelled;pos+=kFramesPerChunk/2){
+            const std::size_t count=std::min<std::size_t>(kFramesPerChunk/2,clip.samples-pos);
+            for(std::size_t i=0;i<count;++i){
+                const auto value=static_cast<int16_t>(int32_t(decodeMulaw(clip.mulaw[pos+i]))*85/100);
+                samples[2*i]=samples[2*i+1]=value; // 8 kHz clips -> 16 kHz I2S.
+            }
+            writeFrames(samples.data(),count*2);
+        }
+        if(word+1<message.count)playSilence(25);
+    }
+}
 #endif
 
 void playAlert() {
     const auto settings = DeviceConfig::instance().snapshot();
-    if (!settings.hudAudioEnabled || settings.volume == 0) return;
+    if (settings.volume == 0) return;
     gpio_set_level(kAmpEnable, 0);  // Active-low enable.
     vTaskDelay(pdMS_TO_TICKS(30));
 #if CONFIG_WAZE_HUD_AUDIO_USE_VOICE
@@ -176,32 +202,19 @@ void playAlert() {
     gpio_set_level(kAmpEnable, 1);
 }
 
-bool isOverspeed() {
-    const HudState state = HudStateStore::instance().snapshot();
-    const DeviceSettings settings = DeviceConfig::instance().snapshot();
-    const int threshold =
-        std::max(0, state.speedLimitKmh + static_cast<int>(settings.overspeedOffsetKmh));
-    return settings.hudAudioEnabled && settings.volume > 0 && state.connected && state.hasProducerState && !state.signalStale &&
-           state.speedLimitKmh > 0 && state.speedKmh > threshold;
-}
-
 void audioTask(void *) {
-    TickType_t overspeedSince = 0;
-    TickType_t lastAlert = 0;
-    bool alerted = false;
     for (;;) {
-        if (isOverspeed()) {
-            const TickType_t now = xTaskGetTickCount();
-            if (overspeedSince == 0) overspeedSince = now;
-            const bool debounced = now - overspeedSince >= kDebounceTicks;
-            if (debounced && (!alerted || now - lastAlert >= kRepeatTicks)) {
-                playAlert();
-                alerted = true;
-                lastAlert = xTaskGetTickCount();
-            }
-        } else {
-            overspeedSince = 0;
-            alerted = false;
+        const auto a=planner.next(HudStateStore::instance().snapshot(),DeviceConfig::instance().snapshot(),nowMs());
+        if(a.kind!=SpeechKind::None){
+            activeAnnouncement=a;playing=true;cancelled=false;
+            ESP_LOGI(kTag,"Announce kind=%u value=%d turn=%u stage=%u alert=%u",
+                unsigned(a.kind),a.value,unsigned(a.maneuver),unsigned(a.stage),unsigned(a.alert));
+            if(a.kind==SpeechKind::Overspeed)playAlert();
+#if CONFIG_WAZE_HUD_AUDIO_USE_VOICE
+            else{gpio_set_level(kAmpEnable,0);vTaskDelay(pdMS_TO_TICKS(30));playGuidance(a);playSilence(40);}
+#endif
+            gpio_set_level(kAmpEnable,1);playing=false;
+            if(!cancelled)planner.complete(a,nowMs());
         }
         vTaskDelay(pdMS_TO_TICKS(200));
     }
@@ -209,6 +222,7 @@ void audioTask(void *) {
 }  // namespace
 
 esp_err_t startOverspeedAudio() {
+    planner=GuidancePlanner{CONFIG_WAZE_HUD_AUDIO_REPEAT_SEC*1000};playing=false;cancelled=false;
     gpio_config_t amp{};
     amp.pin_bit_mask = 1ULL << static_cast<unsigned>(kAmpEnable);
     amp.mode = GPIO_MODE_OUTPUT;
@@ -217,7 +231,7 @@ esp_err_t startOverspeedAudio() {
 
     ESP_RETURN_ON_ERROR(initI2s(), kTag, "I2S init failed");  // Provides MCLK for the codec.
     ESP_RETURN_ON_ERROR(initCodec(), kTag, "Codec init failed");
-    const BaseType_t created = xTaskCreate(audioTask, "overspeed_audio", 4096, nullptr, 2, nullptr);
+    const BaseType_t created = xTaskCreate(audioTask, "hud_audio", 8192, nullptr, 2, nullptr);
     return created == pdPASS ? ESP_OK : ESP_ERR_NO_MEM;
 }
 

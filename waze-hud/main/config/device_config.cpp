@@ -14,8 +14,8 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "CONFIG";
 constexpr char kNamespace[] = "hud_cfg";
-constexpr int kItemCount = 12;
-constexpr uint32_t kSchemaRevision = 9;
+constexpr int kItemCount = 11;
+constexpr uint32_t kSchemaRevision = 10;
 SemaphoreHandle_t configMutex = nullptr;
 struct ConfigGuard {
     ConfigGuard() { xSemaphoreTake(configMutex, portMAX_DELAY); }
@@ -84,7 +84,6 @@ esp_err_t saveSettings(const DeviceSettings &settings) {
     if (result == ESP_OK) result = nvs_set_u8(nvs, "rotate", settings.rotateDisplay ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_u8(nvs, "portrait", settings.portraitDisplay ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_u8(nvs, "volume", settings.volume);
-    if (result == ESP_OK) result = nvs_set_u8(nvs, "hud_audio", settings.hudAudioEnabled ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "over_offset", settings.overspeedOffsetKmh);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "offset_x", settings.offsetX);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "offset_y", settings.offsetY);
@@ -154,7 +153,8 @@ esp_err_t DeviceConfig::init() {
     if (nvs_get_u8(nvs, "portrait", &byte) == ESP_OK) active_.portraitDisplay = byte != 0;
     if (nvs_get_u8(nvs, "volume", &byte) == ESP_OK && byte <= 100)
         active_.volume = ((byte + 2) / 5) * 5;
-    if (nvs_get_u8(nvs, "hud_audio", &byte) == ESP_OK) active_.hudAudioEnabled = byte != 0;
+    // v9's default-off hud_audio flag suppressed alerts even at nonzero volume.
+    // Volume is now the single mute control; deliberately ignore that old key.
     int8_t offset = 0;
     if (nvs_get_i8(nvs, "over_offset", &offset) == ESP_OK && offset >= -10 && offset <= 5)
         active_.overspeedOffsetKmh = offset;
@@ -290,9 +290,6 @@ void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
     root = schemaItem(settings.revision, "portrait_display", "toggle", "Hien thi doc (240x320)");
     cJSON_AddBoolToObject(root, "value", settings.portraitDisplay); sendJson(root, send, context);
 
-    root = schemaItem(settings.revision, "hud_audio", "toggle", "Canh bao qua loa HUD (tat neu nghe dien thoai)");
-    cJSON_AddBoolToObject(root, "value", settings.hudAudioEnabled); sendJson(root, send, context);
-
     root = schemaItem(settings.revision, "volume", "slider", "Am luong loa HUD (0 = im lang)");
     cJSON_AddNumberToObject(root, "value", settings.volume);
     cJSON_AddNumberToObject(root, "min", 0); cJSON_AddNumberToObject(root, "max", 100);
@@ -382,9 +379,6 @@ bool DeviceConfig::handleMessage(const cJSON *root, HlpSendLine send, void *cont
         } else if (std::strcmp(id->valuestring, "volume") == 0) {
             bit = 1U << 10; valid = exactInteger(value, 0, 100, integer) && integer % 5 == 0;
             if (valid) pending.draft.volume = static_cast<uint8_t>(integer);
-        } else if (std::strcmp(id->valuestring, "hud_audio") == 0) {
-            bit = 1U << 11; valid = cJSON_IsBool(value);
-            if (valid) pending.draft.hudAudioEnabled = cJSON_IsTrue(value);
         } else valid = false;
         if ((pending.mask & bit) != 0) valid = false;
         if (!valid) {

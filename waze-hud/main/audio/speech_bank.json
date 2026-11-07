@@ -1,0 +1,216 @@
+{
+  "voice": "Linh",
+  "rate": 190,
+  "encoding": "G711 mu-law 8kHz mono",
+  "bytes": 432872,
+  "phrases": {
+    "Prepare": {
+      "text": "Chuẩn bị",
+      "bytes": 4312
+    },
+    "Straight": {
+      "text": "Đi thẳng",
+      "bytes": 4958
+    },
+    "Left": {
+      "text": "Rẽ trái",
+      "bytes": 5558
+    },
+    "Right": {
+      "text": "Rẽ phải",
+      "bytes": 5118
+    },
+    "SlightLeft": {
+      "text": "Rẽ chếch trái",
+      "bytes": 7780
+    },
+    "SlightRight": {
+      "text": "Rẽ chếch phải",
+      "bytes": 6749
+    },
+    "SharpLeft": {
+      "text": "Rẽ gắt sang trái",
+      "bytes": 9295
+    },
+    "SharpRight": {
+      "text": "Rẽ gắt sang phải",
+      "bytes": 8782
+    },
+    "UTurn": {
+      "text": "Quay đầu xe",
+      "bytes": 6727
+    },
+    "KeepLeft": {
+      "text": "Đi về phía bên trái",
+      "bytes": 11072
+    },
+    "KeepRight": {
+      "text": "Đi về phía bên phải",
+      "bytes": 10706
+    },
+    "ExitLeft": {
+      "text": "Ra lối bên trái",
+      "bytes": 9557
+    },
+    "ExitRight": {
+      "text": "Ra lối bên phải",
+      "bytes": 9193
+    },
+    "Roundabout": {
+      "text": "Vào vòng xuyến",
+      "bytes": 7730
+    },
+    "RoundaboutExit": {
+      "text": "Lấy lối ra số",
+      "bytes": 9494
+    },
+    "Arrive": {
+      "text": "Bạn đã đến nơi",
+      "bytes": 9160
+    },
+    "Ferry": {
+      "text": "Đi lên phà",
+      "bytes": 7322
+    },
+    "CurrentLimit": {
+      "text": "Giới hạn tốc độ hiện tại",
+      "bytes": 12700
+    },
+    "NextLimit": {
+      "text": "Giới hạn tốc độ phía trước",
+      "bytes": 12489
+    },
+    "Kmh": {
+      "text": "Ki lô mét một giờ",
+      "bytes": 10514
+    },
+    "CameraSpeed": {
+      "text": "Phía trước có camera tốc độ",
+      "bytes": 16152
+    },
+    "CameraEnforcement": {
+      "text": "Phía trước có camera phạt nguội",
+      "bytes": 17091
+    },
+    "CameraRedLight": {
+      "text": "Phía trước có camera đèn đỏ",
+      "bytes": 16793
+    },
+    "CameraOther": {
+      "text": "Phía trước có camera giao thông",
+      "bytes": 17240
+    },
+    "Police": {
+      "text": "Phía trước có cảnh sát giao thông",
+      "bytes": 16093
+    },
+    "Hazard": {
+      "text": "Phía trước có nguy hiểm",
+      "bytes": 11510
+    },
+    "Accident": {
+      "text": "Phía trước có tai nạn",
+      "bytes": 10583
+    },
+    "RoadClosed": {
+      "text": "Phía trước đường bị đóng",
+      "bytes": 11013
+    },
+    "Railway": {
+      "text": "Phía trước có đường sắt",
+      "bytes": 10018
+    },
+    "Construction": {
+      "text": "Phía trước có công trường",
+      "bytes": 11774
+    },
+    "NoPassing": {
+      "text": "Bạn đang trong vùng cấm vượt",
+      "bytes": 12450
+    },
+    "SpeedBump": {
+      "text": "Phía trước có gờ giảm tốc",
+      "bytes": 12215
+    },
+    "SchoolZone": {
+      "text": "Phía trước là khu vực trường học",
+      "bytes": 13962
+    },
+    "TrafficLight": {
+      "text": "Phía trước có đèn giao thông",
+      "bytes": 13390
+    },
+    "TrafficJam": {
+      "text": "Phía trước đang ùn tắc",
+      "bytes": 10265
+    },
+    "GenericAlert": {
+      "text": "Chú ý biển báo phía trước",
+      "bytes": 12148
+    },
+    "N0": {
+      "text": "không",
+      "bytes": 3492
+    },
+    "N1": {
+      "text": "một",
+      "bytes": 2494
+    },
+    "N2": {
+      "text": "hai",
+      "bytes": 3466
+    },
+    "N3": {
+      "text": "ba",
+      "bytes": 3163
+    },
+    "N4": {
+      "text": "bốn",
+      "bytes": 3349
+    },
+    "N5": {
+      "text": "năm",
+      "bytes": 2941
+    },
+    "N6": {
+      "text": "sáu",
+      "bytes": 3981
+    },
+    "N7": {
+      "text": "bảy",
+      "bytes": 3318
+    },
+    "N8": {
+      "text": "tám",
+      "bytes": 3075
+    },
+    "N9": {
+      "text": "chín",
+      "bytes": 3261
+    },
+    "Ten": {
+      "text": "mười",
+      "bytes": 3608
+    },
+    "Tens": {
+      "text": "mươi",
+      "bytes": 3262
+    },
+    "Hundred": {
+      "text": "trăm",
+      "bytes": 2733
+    },
+    "Odd": {
+      "text": "lẻ",
+      "bytes": 3219
+    },
+    "FinalOne": {
+      "text": "mốt",
+      "bytes": 2482
+    },
+    "FinalFive": {
+      "text": "lăm",
+      "bytes": 3115
+    }
+  }
+}

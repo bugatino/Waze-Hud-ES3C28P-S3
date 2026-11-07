@@ -301,7 +301,7 @@ void mockTask(void *) {
             case 8:
                 state.maneuver = Maneuver::RoundaboutStraight; state.roundaboutExit = 2;
                 state.maneuverDistanceM = 420;
-                state.nearestAlert = {AlertKind::PhoneCamera, 650, 0};
+                state.nearestAlert = {AlertKind::EnforcementCamera, 650, 0};
                 break;
             case 9:
                 state.nearestAlert = {AlertKind::Railway, 180, 0};

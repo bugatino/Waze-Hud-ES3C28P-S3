@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
 
-set(PROJECT_VER "2.8.15-portrait.2")
+set(PROJECT_VER "2.8.15-portrait.4")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(waze_hud_es3c28p)

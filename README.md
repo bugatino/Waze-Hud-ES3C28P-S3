@@ -50,11 +50,17 @@ python -m esptool --chip esp32s3 -p COM5 -b 460800 write_flash 0x0 ES3C28P-BLE-1
 - Ảnh nền và thuật toán lịch âm được chuyển từ [bugatino/wazehud-esp32](https://github.com/bugatino/wazehud-esp32); bảng dữ liệu lịch âm có nguồn từ gói MIT `lunar` v2.0.0 của 6tail.
 
 ### 🔊 Cảnh báo quá tốc độ bằng giọng nói
-- Từ `2.8.15-portrait.2`, loa HUD mặc định **tắt** để tránh phát trùng với điện thoại. Bật **"Canh bao qua loa HUD"** trong app nếu muốn nghe loa box; khi đó cần tắt âm thanh Waze trên điện thoại nếu chỉ muốn nghe một nguồn. Firmware chưa có lệnh điều khiển tiếng điện thoại.
+- Từ `2.8.15-portrait.3`, âm lượng là điều khiển loa duy nhất: **0% = tắt tiếng**, lớn hơn 0% = bật cảnh báo. Bỏ công tắc phụ mặc định tắt của bản `.2` khiến loa không phát dù hiện 35%. Khi nâng cấp vẫn giữ mức âm lượng đã lưu. Firmware chưa có lệnh điều khiển tiếng điện thoại; cần tắt tiếng Waze trên điện thoại nếu chỉ muốn nghe một nguồn.
 - Phát câu **"Bạn đã quá tốc độ"** qua loa khi tốc độ vượt giới hạn + ngưỡng (chỉnh trong app) liên tục **1,5 giây**.
 - Lặp lại mỗi **4 giây** (tính từ lúc đọc xong) nếu vẫn quá tốc độ. Về tốc độ cho phép thì ngừng.
 - Dùng codec **ES8311** + bộ khuếch đại của board. Nếu không tìm thấy codec, HUD vẫn chạy bình thường (chỉ ghi cảnh báo vào log).
 - Có thể đổi giọng nói hoặc dùng tiếng bíp (xem mục *Tùy chỉnh âm thanh*).
+
+### 🗣️ Lời đọc dẫn đường và cảnh báo (từ portrait.4)
+- HUD đọc tiếng Việt trực tiếp từ dữ liệu HLP: chuẩn bị rẽ trong 500 m, nhắc rẽ trong 80 m, vòng xuyến/lối ra, giới hạn tốc độ hiện tại khi thay đổi, giới hạn tiếp theo trong 1 km và camera phía trước trong 600 m.
+- Có lời đọc cho CSGT, tai nạn, đường đóng, công trường, đường sắt, cấm vượt, gờ giảm tốc, trường học, đèn giao thông, ùn tắc; biển khác dùng lời nhắc chung. Không đọc tên đường và không chuyển tiếp âm thanh của điện thoại.
+- 52 đoạn giọng Linh tiếng Việt được nhúng offline; số giới hạn ghép từ 0–999. Mỗi sự kiện đọc một lần; rẽ gần được ưu tiên, câu cũ bị hủy khi đổi phiên/dữ liệu cũ hoặc không còn phù hợp. Quá tốc vẫn có nhịp nhắc riêng. Âm lượng 0% tắt toàn bộ lời đọc.
+- `lan` là dữ liệu Waze phải gửi qua BLE. HUD hiện làn khi nhận được hướng hợp lệ kể cả cờ `nav` tắt; mask chọn sai chỉ bỏ tô màu, không bỏ cả hướng. Mảng `lan:[]` xóa làn ngay; trường thiếu vẫn có bộ lưu tạm giới hạn như trước. Trang trạng thái thiết bị và log `LAN wire/accepted/visible/nav` giúp phân biệt thiếu dữ liệu với lỗi vẽ.
 
 ### 🚗 Giao diện HUD tối ưu cho taplo ô tô
 - Nền đen tuyệt đối, chống chói khi đặt trên taplo.
@@ -101,7 +107,6 @@ Khi Waze Mod hỗ trợ `device_config` (schema version 8), HUD gửi lên 11 th
 | Xoay màn hình | Bật / Tắt | Xoay 180° theo hướng lắp |
 | Hiển thị dọc | Bật / Tắt | Tắt: ngang 320×240; bật: dọc 240×320; độc lập với đảo 180° |
 | Âm lượng loa | 0–100%, bước 5% | 0 = im lặng; vẫn hiện cảnh báo trên màn hình |
-| Cảnh báo qua loa HUD | Bật / Tắt | Mặc định tắt; bật khi muốn dùng loa box thay cho tiếng điện thoại |
 | Ngưỡng quá tốc | −10 đến +5 km/h | Bù vào giới hạn trước khi cảnh báo (áp dụng cả cho giọng nói) |
 | Dịch ngang | −5 đến +5 px | Tinh chỉnh vị trí giao diện |
 | Dịch dọc | −5 đến +5 px | Tinh chỉnh vị trí giao diện |
@@ -133,11 +138,12 @@ Khi Waze Mod hỗ trợ `device_config` (schema version 8), HUD gửi lên 11 th
 - Hướng dọc/ngang, đảo 180°, phản chiếu và âm lượng được lưu khi mất nguồn. App cần nhận lại schema sau thay đổi cấu hình bằng thao tác trên box.
 - Màn dọc: trái là giờ/ngày và trạng thái loa, giữa là quãng đường/thời gian còn lại, phải là giờ đến/ETA (không có ETA thì hiện BLE). Bỏ ETA phía dưới và các dòng hướng dẫn thao tác.
 - Hiện tối đa 2 cảnh báo khi có làn đường, 3 khi không có làn đường và 5 khi chạy tự do; `+N` cho biết số cảnh báo còn lại. Biển giới hạn sắp tới ghi “TỐC ĐỘ TIẾP THEO”.
-- Số tốc độ/biển giới hạn dùng bitmap khử răng cưa ở đúng kích thước; làn đường dùng nét cong, tối đa 5 làn đang xem, ưu tiên vùng làn được chọn.
+- Số tốc độ/biển giới hạn dùng bitmap khử răng cưa ở đúng kích thước; làn đường dùng nét cong và đầu mũi tên đặc, nhánh ngang tách khỏi đầu đi thẳng. Hướng được chọn màu xanh, các nhánh còn lại màu trắng; tối đa 5 làn đang xem, ưu tiên vùng làn được chọn.
+- Mã cảnh báo HLP `CAMERA_PHONE = 40` được hiển thị là **CAM PHẠT NGUỘI** theo tài liệu SDK; giữ nguyên mã giao thức và phân biệt camera tốc độ/đèn đỏ/dây an toàn.
 - FT6336G dùng I²C 0x38 trên SDA16/SCL15, chia sẻ bus với ES8311. ES3N28P không có cảm ứng vẫn chạy HUD và cấu hình qua app; firmware ghi log nếu không tìm thấy chip cảm ứng.
 
-Firmware `2.8.15-portrait.2` được kiểm tra bằng host preview, sanitizer, test gesture/ánh xạ, test cấu hình, toàn dải PCM và build ESP-IDF. Chạm/vuốt vật lý, hướng tọa độ thực tế, loa và giao diện app vẫn cần thử trên thiết bị.
-File factory gộp nạp ở `0x0` có thể ghi đè vùng cấu hình NVS; cần chọn lại cấu hình sau khi nạp. Mất nguồn thông thường vẫn giữ cấu hình. Mặc định khi chưa có cấu hình là ngang, âm lượng 50%, loa HUD tắt. Schema hiện có 12 mục, phiên bản 9; giữ lại cài đặt cũ khi nâng cấp. Nếu từng bật phản chiếu để chữa lỗi chữ ngược ở màn dọc, hãy tắt phản chiếu sau khi nâng cấp để xem trực tiếp.
+Firmware `2.8.15-portrait.4` được kiểm tra bằng host preview, sanitizer, gesture/ánh xạ, cấu hình, PCM, task phát âm thanh với I2S/GPIO giả lập, bộ chọn lời đọc, giải mã giọng so với FFmpeg, decoder camera và dữ liệu JSON làn đi qua renderer thật, rồi build ESP-IDF. Lời đọc và làn đường từ Waze trên box vẫn cần thử thực tế.
+File factory gộp nạp ở `0x0` có thể ghi đè vùng cấu hình NVS; cần chọn lại cấu hình sau khi nạp. Mất nguồn thông thường vẫn giữ cấu hình. Mặc định khi chưa có cấu hình là ngang, âm lượng 50%. Schema hiện có 11 mục, phiên bản 10; giữ lại mức âm lượng và các cài đặt cũ khi nâng cấp, bỏ qua khóa `hud_audio` cũ. Nếu từng bật phản chiếu để chữa lỗi chữ ngược ở màn dọc, hãy tắt phản chiếu sau khi nâng cấp để xem trực tiếp.
 Tham chiếu thanh ghi cảm ứng: [Espressif FT5x06 driver](https://github.com/espressif/esp-bsp/blob/master/components/lcd_touch/esp_lcd_touch_ft5x06/esp_lcd_touch_ft5x06.c).
 
 ---

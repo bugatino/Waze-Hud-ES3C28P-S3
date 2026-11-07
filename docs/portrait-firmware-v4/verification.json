@@ -1,0 +1,44 @@
+{
+  "version": "2.8.15-portrait.4",
+  "date": "2026-11-07",
+  "target": "esp32s3 / ES3C28P BLE",
+  "idf": "5.5.5",
+  "sourceBaseCommit": "5779e41",
+  "factory": "waze_hud_es3c28p_portrait_v4_factory_20261107.bin",
+  "factoryOffset": "0x0",
+  "factorySha256": "ffc3192bc32cc0341c200c46c0b662b7d7db1dd98baa8f692e946f9483a988a7",
+  "factoryBytes": 2660752,
+  "app": "waze_hud_es3c28p_portrait_v4_app_20261107.bin",
+  "appOffset": "0x20000",
+  "appSha256": "cbdf7a33f527b13d0be485458a71841a898f333bba66e986d9782bd1333d3faf",
+  "appBytes": 2529680,
+  "partitionBytes": 3145728,
+  "speechClips": 52,
+  "speechEncodedBytes": 432872,
+  "checks": [
+    "ESP-IDF 5.5.5 S3 BLE build, partition check, no compiler warnings",
+    "esptool valid application checksum and validation hash",
+    "Factory payload equals app at 0x20000",
+    "ASan/UBSan renderer: 21 maneuvers and 75 alerts",
+    "614400 orientation mappings and touch gesture classification",
+    "458752 signed PCM checks",
+    "Real audio task with fake S3 codec/I2S/GPIO: local speech, stereo gain, zero mute, cancelled clip resume, stale silence and debounced overspeed",
+    "Guidance planner: current/next limits, turn stages, urgent preemption, per-event no-repeat, camera encounters, stale and session cancellation",
+    "Real HLP JSON decoder -> real striped renderer: nav 1, nav true, nav 0 plus lanes, invalid selection preserves lane directions, explicit empty array clears cache",
+    "Configuration schema v10 and camera type regressions",
+    "All 256 mu-law values equal FFmpeg reference; all 52 embedded clips contain signal; four speech WAV samples use actual assets and 35 percent runtime gain"
+  ],
+  "hardwareVerified": false,
+  "reportedLaneRootCauseConfirmed": false,
+  "remainingDeviceChecks": [
+    "All new voice prompts on physical speaker and real route",
+    "Raw LAN/handshake diagnostics for the recovered session",
+    "Real BLE/app configuration after flashing"
+  ],
+  "deviceFeedback": {
+    "date": "2026-11-07",
+    "laneDisplay": "User confirmed lanes are visible after the HUD Link reconnect test",
+    "overspeedAudio": "User confirmed physical speaker output on portrait.3",
+    "recoveryHandshakeCaptured": false
+  }
+}

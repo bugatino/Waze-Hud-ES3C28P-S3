@@ -7,6 +7,20 @@ Firmware được phát hành dưới định dạng **Factory All-in-One** (đ�
 
 ---
 
+## [2.8.15-portrait.4] - 2026-11-07 (ESP32-S3)
+
+- Bổ sung lời đọc offline tiếng Việt: hướng rẽ/vòng xuyến/lối ra, giới hạn hiện tại và tiếp theo, camera phạt nguội/tốc độ/đèn đỏ, các cảnh báo phổ biến. Bản fork ban đầu chỉ có lời quá tốc độ; HLP không vận chuyển tiếng Waze.
+- Bộ chọn lời đọc theo dữ liệu mới nhất, ưu tiên rẽ/cảnh báo gần, ghi nhận sau khi đọc xong, chống lặp từng sự kiện và bỏ câu cũ khi đổi phiên, mất dữ liệu, tắt tiếng hoặc sự kiện không còn. Giữ điều kiện quá tốc 1,5 s và khoảng nhắc cấu hình.
+- Giữ làn hợp lệ khi mask chọn sai (bỏ chọn thay vì đoán); nhận cờ nav kiểu boolean, hiện làn có dữ liệu kể cả nav tắt, xóa cache khi đổi phiên và xóa ngay với `lan:[]`. Log thương lượng và số làn wire/accepted/visible; trang trạng thái có thông tin nguồn làn.
+- Log trên box xác nhận phiên lỗi thiếu trường `lan` (`wire=-1`); người dùng đã thử kết nối lại HUD Link và xác nhận làn hiển thị. Chưa lưu được raw log phiên khôi phục để kết luận nguyên nhân app bỏ trường. Các trường hợp tái hiện trong decoder/renderer đã qua kiểm thử.
+
+## [2.8.15-portrait.3] - 2026-11-07 (ESP32-S3)
+
+- Sửa làn đường khó đọc: đầu mũi tên đặc, nhánh ngang nằm thấp hơn đầu đi thẳng, nhánh được chọn không bị nhánh khác vẽ đè; tăng tương phản nhánh không chọn thành màu trắng. Giữ đủ 8 hướng, tách rẽ gắt và quay đầu.
+- Khôi phục loa theo mức âm lượng: bỏ công tắc phụ mặc định tắt của `.2`, 0% là điều khiển tắt tiếng duy nhất. Bật lại được khi tăng âm lượng giữa lúc đang phát, giữ sửa phép nhân PCM có dấu và khoảng dự phòng gain chống rè. Schema 11 mục/v10, giữ mức âm lượng kể cả 0% khi nâng cấp từ v9.
+- Sửa nhãn và icon camera mã 40 (`CAMERA_PHONE`) thành “CAM PHẠT NGUỘI” theo tài liệu HLP SDK; không đổi mã gửi/nhận hoặc loại camera khác.
+- Đối chiếu audio với mốc fork `3d4530f`: giữ chân GPIO, I2S stereo 16-bit/16 kHz, MCLK ×256, I2C, điều kiện quá tốc 1,5 giây và lặp 4 giây. Thêm kiểm thử task audio thực với GPIO/I2S giả lập và decoder camera.
+
 ## [2.8.15-portrait.2] - 2026-11-07 (ESP32-S3)
 
 - Triển khai UI dọc v2 đã duyệt: giờ/ngày/âm lượng bên trái, quãng đường/thời gian ở giữa, giờ đến/ETA bên phải; dành vùng dưới cho nhiều cảnh báo và bỏ hướng dẫn thao tác.

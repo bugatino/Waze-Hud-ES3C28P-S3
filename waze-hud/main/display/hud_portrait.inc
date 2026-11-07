@@ -31,12 +31,32 @@ void speakerIcon(Canvas &c,int x,int y,bool audible){
     if(audible){c.line(x+10,y+3,x+12,y+6,color);c.line(x+12,y+6,x+10,y+10,color);}
     else {c.line(x+10,y+3,x+15,y+10,color);c.line(x+15,y+3,x+10,y+10,color);}
 }
+void portraitLane(Canvas &c,int x,int y,const LaneState &lane){
+    // Union each coverage mask before compositing. Sequential branch drawing
+    // used to paint inactive branches over the active straight arrow's head.
+    for(int row=0;row<36;++row){
+      std::array<uint8_t,36> allowedRow{},activeRow{};
+      for(int col=0;col<36;++col){
+        const int p=row*36+col;
+        uint8_t all=assets::kPortraitLaneStem.alpha[p];
+        uint8_t active=lane.selectedMask?all:0;
+        for(int b=0;b<8;++b)if(lane.directionMask&(1U<<b)){
+            const auto coverage=assets::kPortraitLaneBranches[b].alpha[p];
+            all=std::max(all,coverage);
+            if(lane.selectedMask&(1U<<b))active=std::max(active,coverage);
+        }
+        allowedRow[col]=all;activeRow[col]=active;
+      }
+      c.alphaMask(x,y+row,{36,1,allowedRow.data()},colors::White);
+      c.alphaMask(x,y+row,{36,1,activeRow.data()},colors::Cyan);
+    }
+}
 }
 
 void HudRenderer::renderVolume(Canvas &c,const Rect &r,int width,int height,const DeviceSettings &settings){
     const int x=(width-172)/2-r.x,y=(height-74)/2-r.y;
     portraitCard(c,x,y,172,74,colors::Cyan);
-    speakerIcon(c,x+17,y+20,settings.hudAudioEnabled&&settings.volume>0);
+    speakerIcon(c,x+17,y+20,settings.volume>0);
     char volume[12];std::snprintf(volume,sizeof(volume),"%u%%",settings.volume);
     c.fontText(x+45,y+9,volume,assets::kTextLarge,colors::White,110,true);
     c.fillRect(x+20,y+54,132,5,colors::Muted);
@@ -89,9 +109,13 @@ void HudRenderer::renderPortrait(Canvas &c,const Rect &r,const HudState &s,
         std::snprintf(detail,sizeof(detail),"Tín hiệu: %d dBm",sys.bleRssiDbm);
         if(sys.bleConnected)txt(15,134,detail,assets::kHudHeader,colors::White,210);
         txt(15,168,"Hiển thị: Dọc 240 x 320",assets::kHudSmall,colors::White,210);
-        std::snprintf(detail,sizeof(detail),"Loa HUD: %s - %u%%",settings.hudAudioEnabled?"Bật":"Tắt",settings.volume);
+        std::snprintf(detail,sizeof(detail),"Loa HUD: %s - %u%%",settings.volume>0?"Bật":"Tắt",settings.volume);
         txt(15,203,detail,assets::kHudSmall,colors::White,210);
-        txt(15,240,ms==INT64_MIN?"Giờ: Chưa đồng bộ":"Giờ: Đã đồng bộ",assets::kHudSmall,colors::Muted,210);return;
+        txt(15,240,ms==INT64_MIN?"Giờ: Chưa đồng bộ":"Giờ: Đã đồng bộ",assets::kHudSmall,colors::Muted,210);
+        if(s.laneWireCount==-1)std::snprintf(detail,sizeof(detail),"Làn: chờ Waze (lưu %u)",unsigned(s.laneCount));
+        else if(s.laneWireCount==-2)std::snprintf(detail,sizeof(detail),"Làn: dữ liệu không hợp lệ");
+        else std::snprintf(detail,sizeof(detail),"Làn: nhận %d / hiện %u",int(s.laneWireCount),unsigned(s.laneCount));
+        txt(15,274,detail,assets::kHudSmall,s.laneCount?colors::Cyan:colors::Amber,210);return;
     }
     if(page_==2)renderTripPage(c,{0,0,240,320},240,320);
     else if(page_==1||((!s.connected||!s.hasProducerState)&&!s.signalStale)){
@@ -107,7 +131,7 @@ void HudRenderer::renderPortrait(Canvas &c,const Rect &r,const HudState &s,
         angularPanel(c,12,267,216,30,accent);txt(15,272,date,assets::kHudSmall,colors::Amber,210,true);
     }else{
         txt(8,0,time,assets::kHudHeader,colors::White,50);
-        const bool audible=settings.hudAudioEnabled&&settings.volume>0;
+        const bool audible=settings.volume>0;
         speakerIcon(c,59,4,audible);char volume[8];std::snprintf(volume,sizeof(volume),"%u%%",settings.volume);
         txt(76,4,volume,assets::kHudTiny,audible?colors::Muted:colors::Amber,27);
         txt(8,22,dayMonth,assets::kHudSmall,colors::Muted,65);
@@ -156,7 +180,7 @@ void HudRenderer::renderPortrait(Canvas &c,const Rect &r,const HudState &s,
                 if(extra>0){char more[12];std::snprintf(more,sizeof(more),"+%d",extra);txt(201,y+15,more,assets::kHudTiny,colors::Cyan,24,true);}
                 txt(43,y+15,detail,assets::kHudTiny,colors::Muted,extra>0?152:178);
             };
-            if(s.navigationActive){
+            if(s.navigationActive||s.laneCount>0){
                 portraitCard(c,8,123,224,77,colors::Muted);
                 if(s.maneuver!=Maneuver::None){
                     c.setTranslation(settings.offsetX,settings.offsetY-r.y+97);
@@ -175,8 +199,7 @@ void HudRenderer::renderPortrait(Canvas &c,const Rect &r,const HudState &s,
                     if(first>=0)start=std::clamp((first+last)/2-visible/2,0,total-visible);
                     const int spacing=200/visible;
                     for(int i=0;i<visible;++i){const auto &lane=s.lanes[start+i];const int x=20+spacing*i+spacing/2-18;
-                        c.alphaMask(x,208,assets::kPortraitLaneStem,lane.selectedMask?colors::Cyan:colors::Muted);
-                        for(int b=0;b<8;++b)if(lane.directionMask&(1U<<b))c.alphaMask(x,208,assets::kPortraitLaneBranches[b],lane.selectedMask&(1U<<b)?colors::Cyan:colors::Muted);
+                        portraitLane(c,x,208,lane);
                         if(lane.selectedMask)c.fillRect(x+8,243,20,2,colors::Cyan);
                     }
                     if(start>0)txt(9,217,"<",assets::kHudSmall,colors::Amber);

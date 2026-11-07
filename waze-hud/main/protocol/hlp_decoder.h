@@ -19,6 +19,8 @@ private:
     uint8_t cachedLaneCount_{0};
     int64_t laneHoldAccumulatedMovingMs_{0};
     int64_t laneLastCheckMs_{0};
+    int lastWireLanes_{-3},lastAcceptedLanes_{-1},lastVisibleLanes_{-1};
+    bool lastLaneNav_{false},lastLaneSelectionInvalid_{false};
 };
 
 }  // namespace waze_hud

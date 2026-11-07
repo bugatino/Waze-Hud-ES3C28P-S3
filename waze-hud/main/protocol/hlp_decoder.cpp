@@ -135,7 +135,7 @@ bool isCameraAlert(AlertKind kind) {
     switch (kind) {
         case AlertKind::SpeedCamera:
         case AlertKind::RedLightCamera:
-        case AlertKind::PhoneCamera:
+        case AlertKind::EnforcementCamera:
         case AlertKind::DummyCamera:
         case AlertKind::SeatbeltCamera:
         case AlertKind::DistanceCamera:
@@ -191,6 +191,8 @@ void HlpDecoder::resetSession() {
     cachedLaneCount_ = 0;
     laneHoldAccumulatedMovingMs_ = 0;
     laneLastCheckMs_ = 0;
+    lastWireLanes_=-3;lastAcceptedLanes_=lastVisibleLanes_=-1;
+    lastLaneNav_=lastLaneSelectionInvalid_=false;
 }
 
 bool HlpDecoder::handleHi(const cJSON *root, HudState &state) {
@@ -202,10 +204,17 @@ bool HlpDecoder::handleHi(const cJSON *root, HudState &state) {
         return false;
     }
     bool changed = false;
+    const cJSON *fields=cJSON_GetObjectItemCaseSensitive(root,"fields");
+    if(cJSON_IsArray(fields)){
+        bool accepted=false;const cJSON *field=nullptr;
+        cJSON_ArrayForEach(field,fields)if(cJSON_IsString(field)&&field->valuestring&&std::strcmp(field->valuestring,"lan")==0)accepted=true;
+        ESP_LOGI(kTag,"Negotiated lan=%s",accepted?"yes":"NO (phone did not accept lane field)");
+    }else ESP_LOGI(kTag,"hi has no fields list; lane negotiation unconfirmed");
     if (session != session_) {
         const bool connected = state.connected;
         state = {};
         state.connected = connected;
+        resetSession();
         session_ = session;
         haveTimestamp_ = false;
         ESP_LOGI(kTag, "HLP session %lu established", static_cast<unsigned long>(session_));
@@ -237,7 +246,7 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
     decoded.clockUnixSeconds = state.clockUnixSeconds;
     decoded.timezoneOffsetMinutes = state.timezoneOffsetMinutes;
     decoded.clockSyncMonotonicMs = state.clockSyncMonotonicMs;
-    decoded.navigationActive = integerOr(root, "nav", 0) != 0;
+    decoded.navigationActive = integerOr(root, "nav", 0) != 0 || cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(root,"nav"));
     decoded.speedKmh = std::clamp(integerOr(root, "spd", 0), 0, 999);
     decoded.speedLimitKmh = std::max(0, integerOr(root, "lim", 0));
     decoded.overSpeed = integerOr(root, "over", 0) != 0;
@@ -314,6 +323,7 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
     uint8_t parsedLaneCount = 0;
     std::array<LaneState, kMaxLanes> parsedLanes{};
     const cJSON *lanes = cJSON_GetObjectItemCaseSensitive(root, "lan");
+    decoded.laneWireCount=!lanes?-1:cJSON_IsArray(lanes)?std::min(127,cJSON_GetArraySize(lanes)):-2;
     if (cJSON_IsArray(lanes)) {
         const cJSON *lane = nullptr;
         cJSON_ArrayForEach(lane, lanes) {
@@ -330,10 +340,12 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
                     || selectedItem->valuedouble < 0.0 || selectedItem->valuedouble > 255.0) continue;
             const int directions = static_cast<int>(directionsItem->valuedouble);
             const int selected = static_cast<int>(selectedItem->valuedouble);
-            if ((selected & ~directions) != 0) continue;
             LaneState &target = parsedLanes[parsedLaneCount++];
             target.directionMask = static_cast<uint8_t>(directions);
-            target.selectedMask = static_cast<uint8_t>(selected);
+            // Keep valid lane directions even if a producer sends an invalid
+            // selection mask. White directions are safer than guessing a lane.
+            if((selected&~directions)!=0)decoded.laneSelectionInvalid=true;
+            target.selectedMask = (selected&~directions)==0?static_cast<uint8_t>(selected):0;
         }
     }
 
@@ -346,7 +358,7 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
         laneLastCheckMs_ = nowMs;
         decoded.lanes = cachedLanes_;
         decoded.laneCount = cachedLaneCount_;
-    } else if (cachedLaneCount_ > 0 && decoded.navigationActive) {
+    } else if (!lanes && cachedLaneCount_ > 0 && decoded.navigationActive) {
         // Khi không có lane mới từ Waze:
         const int64_t dt = laneLastCheckMs_ > 0 ? std::clamp(nowMs - laneLastCheckMs_, 0LL, 1000LL) : 0LL;
         laneLastCheckMs_ = nowMs;
@@ -372,6 +384,16 @@ bool HlpDecoder::decodeState(const cJSON *root, HudState &state) {
         laneHoldAccumulatedMovingMs_ = 0;
         laneLastCheckMs_ = 0;
         decoded.laneCount = 0;
+    }
+
+    if(decoded.laneWireCount!=lastWireLanes_||parsedLaneCount!=lastAcceptedLanes_||
+       decoded.laneCount!=lastVisibleLanes_||decoded.navigationActive!=lastLaneNav_||
+       decoded.laneSelectionInvalid!=lastLaneSelectionInvalid_){
+        ESP_LOGI(kTag,"LAN wire=%d accepted=%u visible=%u nav=%d badSelection=%d (-1=missing,-2=malformed)",
+            int(decoded.laneWireCount),unsigned(parsedLaneCount),unsigned(decoded.laneCount),
+            int(decoded.navigationActive),int(decoded.laneSelectionInvalid));
+        lastWireLanes_=decoded.laneWireCount;lastAcceptedLanes_=parsedLaneCount;lastVisibleLanes_=decoded.laneCount;
+        lastLaneNav_=decoded.navigationActive;lastLaneSelectionInvalid_=decoded.laneSelectionInvalid;
     }
 
     // Minimum-speed state has no HLP/1 field yet. Only the compile-time mock may populate it.

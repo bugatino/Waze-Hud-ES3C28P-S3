@@ -20,3 +20,14 @@ rtk clang++ -std=c++17 -include initializer_list -Iwaze-hud/main \
 rtk tools/host_preview/out/gesture_test
 rtk clang++ -std=c++17 -Iwaze-hud/main tests/pcm_auto_return_test.cpp -o tools/host_preview/out/pcm_auto_return_test
 rtk tools/host_preview/out/pcm_auto_return_test
+rtk clang++ -std=c++17 -O1 -g -fsanitize=address,undefined \
+  -Itests/audio_stubs -Itools/host_preview/stubs -Iwaze-hud/main \
+  tests/audio_pipeline_test.cpp waze-hud/main/audio/overspeed_audio.cpp \
+  waze-hud/main/audio/guidance_planner.cpp waze-hud/main/audio/speech_message.cpp \
+  -o tools/host_preview/out/audio_pipeline_test
+rtk tools/host_preview/out/audio_pipeline_test
+rtk clang++ -std=c++17 -O1 -g -fsanitize=address,undefined \
+  -Itools/host_preview/stubs -Iwaze-hud/main tests/guidance_planner_test.cpp \
+  waze-hud/main/audio/guidance_planner.cpp waze-hud/main/audio/speech_message.cpp \
+  -o tools/host_preview/out/guidance_planner_test
+rtk tools/host_preview/out/guidance_planner_test

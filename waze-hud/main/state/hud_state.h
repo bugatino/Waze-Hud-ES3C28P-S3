@@ -75,7 +75,7 @@ enum class AlertKind : uint8_t {
     OneWay = 37,
     ProhibitedRoad = 38,
     CombinedTurnRestriction = 39,
-    PhoneCamera = 40,
+    EnforcementCamera = 40, // Wire name CAMERA_PHONE; SDK meaning: camera phat nguoi.
     DummyCamera = 41,
     SeatbeltCamera = 42,
     DistanceCamera = 43,
@@ -174,6 +174,8 @@ struct HudState {
     int minimumSpeedKmh{0};
     std::array<LaneState, kMaxLanes> lanes{};
     uint8_t laneCount{0};
+    int8_t laneWireCount{-1}; // -1: omitted, -2: malformed, otherwise entries received.
+    bool laneSelectionInvalid{false};
 
     uint32_t sessionId{0};
     int64_t clockUnixSeconds{0};

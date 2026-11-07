@@ -35,7 +35,6 @@ struct DeviceSettings {
     bool rotateDisplay{kDefaultRotateDisplay};
     bool portraitDisplay{false};
     uint8_t volume{50};
-    bool hudAudioEnabled{false}; // Phone owns alerts unless local playback is explicitly enabled.
     int8_t overspeedOffsetKmh{0};
     int8_t offsetX{0};
     int8_t offsetY{0};

@@ -137,6 +137,11 @@ int main() {
     { SystemStatusSnapshot y{}; y.visible = true; y.bleConnected = true; y.bleRssiDbm = -62; shot("s02_system_status", base(), {}, y); }
     { DeviceSettings d{}; d.theme = UiTheme::Night; shot("s03_night", base(), d); }
     DeviceSettings portrait{}; portrait.portraitDisplay=true;
+    {auto s=base();s.speedKmh=71;s.speedLimitKmh=60;s.maneuver=Maneuver::Continue;s.maneuverDistanceM=518;
+      setText(s.currentStreet,"Ngô Gia Tự");setText(s.nextStreet,"Đi thẳng");
+      s.laneCount=4;s.lanes[0]={0x05,1};s.lanes[1]={0x05,1};s.lanes[2]={0x21,1};s.lanes[3]={0x20,0};
+      alerts(s,{{AlertKind::EnforcementCamera,300,0}});auto cfg=portrait;cfg.volume=35;
+      shot("v23_lane_camera_fix",s,cfg);}
     { auto s=base(); shot("v01_navigation",s,portrait); lanes(s);shot("v02_lanes",s,portrait);
       alerts(s,{{AlertKind::SpeedCamera,300,0},{AlertKind::Police,600,0}});shot("v03_lanes_alert",s,portrait);
       s.maneuver=Maneuver::RoundaboutRight;s.roundaboutExit=4;shot("v04_roundabout",s,portrait);
@@ -171,4 +176,5 @@ int main() {
       assert(g_config.volume==0);g_events.push_back(TouchEvent::Release);r.render(s,g_config,{});
       g_config.portraitDisplay=false;g_nowUs+=2000000;r.render(s,g_config,{});dump("v19_switch_landscape");}
     std::puts("done");
+    return 0;
 }

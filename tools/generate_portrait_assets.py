@@ -45,19 +45,28 @@ def lane_mask(bit):
     def curve(p0,p1,p2):
         return [((1-t)**2*p0[0]+2*(1-t)*t*p1[0]+t*t*p2[0],
                  (1-t)**2*p0[1]+2*(1-t)*t*p1[1]+t*t*p2[1]) for t in (i/16 for i in range(17))]
-    if bit==-1: stroke([(18,32),(18,20)])
-    elif bit==0: stroke([(18,22),(18,5)]);stroke([(12,11),(18,5),(24,11)])
+    def head(points):
+        # Solid heads stay legible on the 2.8-inch panel. Side heads sit below
+        # the straight head so a combined straight/turn lane keeps both shapes.
+        d.polygon([(round(x*scale),round(y*scale)) for x,y in points],fill=255)
+    if bit==-1: stroke([(18,32),(18,22)])
+    elif bit==0:
+        stroke([(18,24),(18,8)]);head([(11,11),(18,3),(25,11)])
     elif bit in (1,4):
-        pts=curve((18,22),(18,17),(30,6)); head=[(22,6),(30,6),(30,14)]
-        if bit==1: pts=[(36-x,y) for x,y in pts];head=[(36-x,y) for x,y in head]
-        stroke(pts);stroke(head)
-    elif bit in (2,3,5,6):
-        pts=curve((18,22),(18,11),(9,11))+[(4,11)];head=[(10,5),(4,11),(10,17)]
-        if bit in (5,6):pts=[(36-x,y) for x,y in pts];head=[(36-x,y) for x,y in head]
-        stroke(pts);stroke(head)
+        pts=curve((18,25),(18,22),(28,12)); tip=[(21,10),(31,9),(30,19)]
+        if bit==1: pts=[(36-x,y) for x,y in pts];tip=[(36-x,y) for x,y in tip]
+        stroke(pts);head(tip)
+    elif bit in (2,5):
+        pts=curve((18,26),(18,17),(10,17))+[(7,17)];tip=[(10,10),(3,17),(10,24)]
+        if bit==5:pts=[(36-x,y) for x,y in pts];tip=[(36-x,y) for x,y in tip]
+        stroke(pts);head(tip)
+    elif bit in (3,6):
+        pts=curve((18,26),(18,16),(12,20))+[(8,25)];tip=[(5,18),(3,29),(14,27)]
+        if bit==6:pts=[(36-x,y) for x,y in pts];tip=[(36-x,y) for x,y in tip]
+        stroke(pts);head(tip)
     else:
-        stroke(curve((18,22),(18,5),(10,5))+curve((10,5),(4,5),(4,13))+[(4,21)])
-        stroke([(1,16),(4,21),(9,16)])
+        stroke(curve((18,26),(18,11),(10,11))+curve((10,11),(5,11),(5,18))+[(5,22)])
+        head([(1,20),(5,28),(11,20)])
     return bytes(image.resize((36,36),Image.Resampling.LANCZOS).get_flattened_data())
 
 def main():

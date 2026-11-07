@@ -125,7 +125,7 @@ bool guidanceChanged(const HudState &a, const HudState &b) {
 
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
     return a.fixedBrightness != b.fixedBrightness || a.brightness != b.brightness ||
-           a.portraitDisplay != b.portraitDisplay || a.volume != b.volume || a.hudAudioEnabled != b.hudAudioEnabled ||
+           a.portraitDisplay != b.portraitDisplay || a.volume != b.volume ||
            a.theme != b.theme || a.invertColor != b.invertColor ||
            a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
            a.overspeedOffsetKmh != b.overspeedOffsetKmh ||
@@ -793,6 +793,9 @@ void drawManeuverIcon(Canvas &canvas, Maneuver maneuver, int exit, uint16_t colo
 }
 
 const assets::ColorBitmap *alertAsset(AlertKind kind, bool dominant) {
+    // HLP CAMERA_PHONE (40) means enforcement/phat nguoi in WazeMod's SDK.
+    // Reuse the camera symbol, rather than suggesting a handset camera.
+    if (kind == AlertKind::EnforcementCamera) kind = AlertKind::SpeedCamera;
     const uint8_t code = static_cast<uint8_t>(kind);
     for (std::size_t index = 0; index < assets::kAlertAssetCount; ++index) {
         const assets::AlertAssetSet &entry = assets::kAlertAssets[index];
@@ -887,7 +890,7 @@ const char *alertKindLabel(AlertKind kind) {
         case AlertKind::OneWay: return "ĐƯỜNG 1 CHIỀU";
         case AlertKind::ProhibitedRoad: return "ĐƯỜNG CẤM";
         case AlertKind::CombinedTurnRestriction: return "CẤM RẼ";
-        case AlertKind::PhoneCamera: return "CAM ĐIỆN THOẠI";
+        case AlertKind::EnforcementCamera: return "CAM PHẠT NGUỘI";
         case AlertKind::DummyCamera: return "CAM GIẢ";
         case AlertKind::SeatbeltCamera: return "CAM DÂY AN TOÀN";
         case AlertKind::DistanceCamera: return "CAM KHOẢNG CÁCH";
@@ -1029,7 +1032,7 @@ inline int alertPriorityScore(AlertKind kind) {
         case AlertKind::RedLightCamera:
         case AlertKind::TrafficLight:
         case AlertKind::Police:
-        case AlertKind::PhoneCamera:
+        case AlertKind::EnforcementCamera:
         case AlertKind::SeatbeltCamera:
         case AlertKind::DistanceCamera:
         case AlertKind::BusLaneCamera:

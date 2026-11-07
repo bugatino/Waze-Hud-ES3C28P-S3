@@ -1,0 +1,33 @@
+{
+  "version": "2.8.15-portrait.3",
+  "date": "2026-11-07",
+  "target": "esp32s3 / ES3C28P BLE",
+  "idf": "5.5.5",
+  "sourceBaseCommit": "5779e41",
+  "factory": "waze_hud_es3c28p_portrait_v3_factory_20261107.bin",
+  "factoryOffset": "0x0",
+  "factorySha256": "a3b6a1082afb29eb09dc050220cdae17066c03a4d1fddb0861dc59d2b154cf2e",
+  "factoryBytes": 2220864,
+  "app": "waze_hud_es3c28p_portrait_v3_app_20261107.bin",
+  "appSha256": "b5028113b4ad8e5d77f541aad6320c559612ba856cd197000084c5f6d453d64a",
+  "appBytes": 2089792,
+  "partitionBytes": 3145728,
+  "checks": [
+    "ESP-IDF S3 BLE build and partition size check",
+    "esptool valid application checksum and validation hash",
+    "Factory application payload equals app binary at offset 0x20000",
+    "ASan/UBSan real renderer: 21 maneuvers and 75 alert codes",
+    "Four-lane field-photo composition and enforcement camera label/icon visually inspected",
+    "614400 orientation round trips and gesture classification",
+    "458752 signed PCM/gain checks and manual-view return policy",
+    "ASan/UBSan real audio task with fake codec/GPIO/I2S: 35 percent output, stereo signed samples, zero mute, mid-clip mute and resume, stale/below-limit silence",
+    "ASan/UBSan real HLP decoder: code 40 enforcement, distinct camera kinds, four-lane masks",
+    "ASan/UBSan schema 11 items; v7/v8/v9 to v10, persistence, validation, concurrent revision, NVS failure, v9 volume35 plus hud_audio0 migration, explicit zero mute persistence"
+  ],
+  "hardwareVerified": false,
+  "remainingDeviceChecks": [
+    "Physical speaker output and gain on ES8311",
+    "Lane arrows and camera label on physical LCD",
+    "Real WazeMod BLE config schema and saved volume"
+  ]
+}
