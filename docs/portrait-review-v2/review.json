@@ -1,0 +1,33 @@
+{
+  "stage": "UI demo and source review only; firmware unchanged",
+  "date": "2026-11-07",
+  "ui": {
+    "headerLeft": "Current time + speaker icon + volume; current date below",
+    "headerCenter": "Remaining distance; remaining duration below",
+    "headerRight": "Estimated arrival time; ETA below. BLE only when ETA unavailable",
+    "modeLabel": false,
+    "bottomEtaBlock": false,
+    "persistentGestureHints": false,
+    "alertRowsWithLanes": 2,
+    "alertRowsWithoutLanes": 3,
+    "alertRowsFreeDrive": 5,
+    "overflow": "Count on last visible alert; no automatic carousel",
+    "speedDropLabel": "TỐC ĐỘ TIẾP THEO",
+    "lanes": "Larger curved strokes, rounded caps, up to five visible lanes centered on selected lanes"
+  },
+  "confirmedSourceFindings": [
+    "drawRoundaboutExit uses fixed centerY=54; the roundabout bitmap occupies y=34..93",
+    "Current speed uses scale 1.25 with smooth=false, producing nearest-neighbor magnification",
+    "Tap changes page to clock, then urgent return resets it to HUD in the same render when maneuver distance <=300 m, an alert is <=100 m or overspeed is true",
+    "Audio sample multiplication mixes int32_t signed sample with unsigned volume; negative PCM samples wrap before division. Example -20000 at 50% becomes +13592 rather than -10000",
+    "Codec output level is fixed at 90 and PCM gain is applied separately",
+    "HUD independently repeats overspeed audio; current HLP declaration has no audio ownership or phone-mute negotiation"
+  ],
+  "pendingHardwareOrAppVerification": [
+    "Base portrait transform must be corrected using real-panel feedback, without requiring user mirror mode. LCD and touch mappings must be validated together",
+    "RMS/peak and audible output at 0/10/25/50/100 percent after signed PCM fix",
+    "Reason phone/HUD duplicate audio differs from user's previous ROM cannot be confirmed from this repository alone"
+  ],
+  "proposedInteractionFix": "Explicit tap opens clock; urgent auto-return should trigger on a new event after a short manual-view grace period, rather than applying a continuously true condition every frame",
+  "audioProposal": "Separate local HUD-speaker enable from volume. Phone-only mode can silence HUD locally; suppressing Waze phone audio requires app support or its corresponding sound setting"
+}
