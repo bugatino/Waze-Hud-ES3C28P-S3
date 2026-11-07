@@ -2,14 +2,26 @@
 
 #include "display/colors.h"
 #include "display/display_driver.h"
+#include "system/lunar_calendar.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+
+#ifdef WAZE_HUD_HOST_PREVIEW
+extern const uint8_t *clockOptimusStart;
+extern const uint8_t *clockBumblebeeStart;
+#else
+extern const uint8_t clockOptimusStart[]
+    asm("_binary_clock_optimus_rgb565_start");
+extern const uint8_t clockBumblebeeStart[]
+    asm("_binary_clock_bumblebee_rgb565_start");
+#endif
 
 namespace waze_hud {
 namespace {
@@ -54,10 +66,7 @@ constexpr int kLaneBlockHeight = 31;
 constexpr int kLaneColumnWidth = 85;
 constexpr int kMaxVisibleLanes = 12;
 
-// While navigating, the trip summary (distance, time, max and average speed) replaces the ETA
-// summary for 10 seconds at the end of every 5 minutes.
-constexpr uint64_t kTripPeekPeriodMs = 300000;
-constexpr uint64_t kTripPeekDurationMs = 10000;
+// Trip statistics are now a hold-to-open page; ETA stays visible while navigating.
 
 bool lanesShown(const HudState &state) {
     return kMiniLanes && state.navigationActive && state.maneuver != Maneuver::None &&
@@ -115,6 +124,7 @@ bool guidanceChanged(const HudState &a, const HudState &b) {
 
 bool hasSettingsChanged(const DeviceSettings &a, const DeviceSettings &b) {
     return a.fixedBrightness != b.fixedBrightness || a.brightness != b.brightness ||
+           a.portraitDisplay != b.portraitDisplay || a.volume != b.volume ||
            a.theme != b.theme || a.invertColor != b.invertColor ||
            a.mirrorHud != b.mirrorHud || a.rotateDisplay != b.rotateDisplay ||
            a.overspeedOffsetKmh != b.overspeedOffsetKmh ||
@@ -172,6 +182,56 @@ void drawTightText(Canvas &canvas, int x, int y, const char *text,
     }
 }
 
+void drawRobotDigit(Canvas &canvas, int x, int y, char digit, uint16_t color) {
+    // Seven broad, square-ended bars form a deliberately mechanical display
+    // face. Unlike an enlarged proportional font, every edge lands on a real
+    // TFT pixel and stays hard and uniform.
+    constexpr uint8_t A = 1U << 0;
+    constexpr uint8_t B = 1U << 1;
+    constexpr uint8_t C = 1U << 2;
+    constexpr uint8_t D = 1U << 3;
+    constexpr uint8_t E = 1U << 4;
+    constexpr uint8_t F = 1U << 5;
+    constexpr uint8_t G = 1U << 6;
+    static constexpr uint8_t kSegments[] = {
+        A | B | C | D | E | F, B | C, A | B | D | E | G,
+        A | B | C | D | G, B | C | F | G, A | C | D | F | G,
+        A | C | D | E | F | G, A | B | C, A | B | C | D | E | F | G,
+        A | B | C | D | F | G,
+    };
+    uint8_t mask = digit >= '0' && digit <= '9' ? kSegments[digit - '0'] : G;
+    constexpr int w = 30;
+    constexpr int h = 45;
+    constexpr int t = 6;
+    if (mask & A) canvas.line(x + 5, y, x + w - 5, y, color, t);
+    if (mask & G) canvas.line(x + 5, y + h / 2, x + w - 5, y + h / 2, color, t);
+    if (mask & D) canvas.line(x + 5, y + h, x + w - 5, y + h, color, t);
+    if (mask & F) canvas.line(x, y + 5, x, y + h / 2 - 5, color, t);
+    if (mask & B) canvas.line(x + w, y + 5, x + w, y + h / 2 - 5, color, t);
+    if (mask & E) canvas.line(x, y + h / 2 + 5, x, y + h - 5, color, t);
+    if (mask & C) canvas.line(x + w, y + h / 2 + 5, x + w, y + h - 5, color, t);
+}
+
+void drawClockTime(Canvas &canvas, const Rect &region, const char *left, const char *right) {
+    constexpr int kDigitAdvance = 40;
+    constexpr int kColonWidth = 16;
+    constexpr int kDigitWidth = 30;
+    constexpr int kPairWidth = kDigitWidth + kDigitAdvance;
+    constexpr int kTotalWidth = kPairWidth * 2 + kColonWidth;
+    constexpr int kTop = 136;
+    const int startX = (layout::Width - kTotalWidth) / 2;
+    const int localY = kTop - region.y;
+
+    drawRobotDigit(canvas, startX - region.x, localY, left[0], colors::White);
+    drawRobotDigit(canvas, startX + kDigitAdvance - region.x, localY, left[1], colors::White);
+    const int colonX = startX + kPairWidth + kColonWidth / 2;
+    canvas.fillRect(colonX - 3 - region.x, 147 - region.y, 6, 6, colors::White);
+    canvas.fillRect(colonX - 3 - region.x, 163 - region.y, 6, 6, colors::White);
+    const int rightX = startX + kPairWidth + kColonWidth;
+    drawRobotDigit(canvas, rightX - region.x, localY, right[0], colors::White);
+    drawRobotDigit(canvas, rightX + kDigitAdvance - region.x, localY, right[1], colors::White);
+}
+
 // Days since 1970-01-01 -> civil date (Howard Hinnant's algorithm).
 void civilFromDays(int64_t days, int &year, int &month, int &day) {
     days += 719468;
@@ -193,6 +253,14 @@ int64_t localClockMillis(const HudState &state) {
         ? nowMs - state.clockSyncMonotonicMs : 0U;
     return state.clockUnixSeconds * 1000LL + static_cast<int64_t>(elapsedMs) +
            static_cast<int64_t>(state.timezoneOffsetMinutes) * 60000LL;
+}
+
+int64_t currentClockUnixSeconds(const HudState &state) {
+    if (state.clockUnixSeconds <= 0) return 0;
+    const uint64_t nowMs = static_cast<uint64_t>(esp_timer_get_time() / 1000);
+    const uint64_t elapsedMs = nowMs >= state.clockSyncMonotonicMs
+        ? nowMs - state.clockSyncMonotonicMs : 0U;
+    return state.clockUnixSeconds + static_cast<int64_t>(elapsedMs / 1000U);
 }
 
 uint8_t calculateTimeOfDayBrightness(int normalizedMinute, uint8_t maxBrightness) {
@@ -1216,7 +1284,10 @@ void drawSpeedMargin(Canvas &canvas, const HudState &state) {
 
 }  // namespace
 
+HudRenderer::~HudRenderer() { heap_caps_free(buffer_); }
+
 esp_err_t HudRenderer::init() {
+    if (buffer_) return ESP_OK;
     buffer_ = static_cast<uint16_t *>(heap_caps_malloc(layout::MaxRegionPixels * sizeof(uint16_t),
                                                        MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL));
     if (!buffer_) {
@@ -1224,6 +1295,10 @@ esp_err_t HudRenderer::init() {
                  layout::MaxRegionPixels * static_cast<int>(sizeof(uint16_t)));
         return ESP_ERR_NO_MEM;
     }
+    // Choose once per boot/renderer lifetime so the idle character does not
+    // flicker between frames. ESP32-S3's hardware RNG gives each power-up a
+    // fresh Optimus/Bumblebee selection.
+    bumblebeeClock_ = (esp_random() & 1U) != 0U;
     return ESP_OK;
 }
 
@@ -1239,7 +1314,7 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
         ? INT64_MIN : currentClockSecond / 60;
     const int8_t currentClockPhase = currentClockMillis == INT64_MIN
         ? -1 : static_cast<int8_t>((currentClockMillis % 1000LL) < 500LL);
-    clockActive_ = state.connected && state.hasProducerState && currentClockSecond != INT64_MIN;
+    clockActive_ = currentClockSecond != INT64_MIN;
     const bool streetChanged = firstFrame_ || !sameText(state.currentStreet, previous_.currentStreet) ||
                                state.navigationActive != previous_.navigationActive;
     const int availableStreetWidth = 304;
@@ -1254,8 +1329,45 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
     const bool shouldMarquee = state.connected && state.hasProducerState &&
                                streetWidth > availableStreetWidth;
     const uint64_t nowMs = static_cast<uint64_t>(esp_timer_get_time() / 1000);
-    const bool tripPeekNow = state.navigationActive && state.connected && state.hasProducerState &&
-                             nowMs % kTripPeekPeriodMs >= kTripPeekPeriodMs - kTripPeekDurationMs;
+    bool interactionChanged = false;
+    for (auto event = TouchSensor::instance().takeEvent(); event != TouchEvent::None;
+         event = TouchSensor::instance().takeEvent()) {
+        interactionChanged = true;
+        if (event == TouchEvent::Tap) page_ = page_ == 0 ? 1 : 0;
+        if (event == TouchEvent::Hold) page_ = page_ == 2 ? 0 : 2;
+        if (event == TouchEvent::VolumeUp || event == TouchEvent::VolumeDown) {
+            const auto volume = DeviceConfig::instance().snapshot().volume;
+            const int change = event == TouchEvent::VolumeUp ? 5 : -5;
+            const auto result = DeviceConfig::instance().setVolume(
+                static_cast<uint8_t>(std::clamp<int>(volume + change, 0, 100)), false);
+            if (result == ESP_OK) { volumeDirty_ = true; lastVolumeChangeMs_ = nowMs; }
+            volumeUntilMs_ = nowMs + 1500;
+        }
+        if (event == TouchEvent::Release && volumeDirty_) {
+            volumeDirty_ = DeviceConfig::instance().persistVolume() != ESP_OK;
+        }
+    }
+    // Also persist after an interrupted gesture (lost release/I2C failure).
+    if (volumeDirty_ && nowMs - lastVolumeChangeMs_ >= 1000) {
+        volumeDirty_ = DeviceConfig::instance().persistVolume() != ESP_OK;
+        lastVolumeChangeMs_ = nowMs;
+    }
+    AlertState alertsForReturn[8]{};
+    const int alertsForReturnCount = collectSortedAlerts(state, alertsForReturn, 8);
+    bool closeAlert = false;
+    for (int i = 0; i < alertsForReturnCount; ++i)
+        if (alertsForReturn[i].distanceM >= 0 && alertsForReturn[i].distanceM <= 100) closeAlert = true;
+    const bool fresh = state.connected && state.hasProducerState && !state.signalStale;
+    const bool urgent = fresh && ((state.navigationActive && state.maneuver != Maneuver::None &&
+        state.maneuverDistanceM >= 0 && state.maneuverDistanceM <= 300) ||
+        firmwareOverspeed(state, settings) || closeAlert);
+    if (urgent && page_ != 0) { page_ = 0; interactionChanged = true; }
+    if (interactionChanged) firstFrame_ = true;
+    adaptiveActive_ = settings.portraitDisplay || page_ != 0 || volumeUntilMs_ != 0 || volumeDirty_;
+    if (volumeUntilMs_ != 0 && nowMs >= volumeUntilMs_) {
+        volumeUntilMs_ = 0; firstFrame_ = true;
+    }
+    const bool tripPeekNow = false; // Statistics now have a dedicated hold-to-open page.
     const bool tripPeekChanged = tripPeekNow != tripPeek_;
     tripPeek_ = tripPeekNow;
     if (!shouldMarquee) {
@@ -1366,11 +1478,32 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
 
     if (configChanged) {
         const esp_err_t orientationResult = DisplayDriver::instance().setOrientation(
-            settings.mirrorHud, settings.rotateDisplay);
+            settings.mirrorHud, settings.rotateDisplay, settings.portraitDisplay);
         if (orientationResult != ESP_OK)
             ESP_LOGE(kTag, "HUD orientation update failed: %s", esp_err_to_name(orientationResult));
     }
     const bool systemStatusChanged = firstFrame_ || systemStatus != previousSystemStatus_;
+#if CONFIG_WAZE_HUD_BOARD_ES3C28P || defined(WAZE_HUD_HOST_PREVIEW)
+    if (settings.portraitDisplay) {
+        if (firstFrame_ || configChanged || systemStatusChanged ||
+            state.localGeneration != previous_.localGeneration ||
+            nowMs - lastPortraitFrameMs_ >= 100) {
+            constexpr int kRows = 40;
+            for (int y = 0; y < 320; y += kRows) {
+                const Rect region{0, static_cast<int16_t>(y), 240, kRows};
+                Canvas canvas(buffer_, 240, kRows);
+                canvas.setTranslation(settings.offsetX, settings.offsetY - y);
+                renderPortrait(canvas, region, state, settings, systemStatus);
+                const auto result = DisplayDriver::instance().drawRegion(region, buffer_);
+                if (result != ESP_OK) ESP_LOGE(kTag, "Portrait transfer failed: %s", esp_err_to_name(result));
+            }
+            lastPortraitFrameMs_ = nowMs;
+        }
+        previous_ = state; previousSettings_ = settings; previousSystemStatus_ = systemStatus;
+        firstFrame_ = false;
+        return;
+    }
+#endif
     if (systemStatus.visible) {
         if (systemStatusChanged || configChanged) {
             renderRegion(layout::Maneuver, state, settings, systemStatus);
@@ -1397,8 +1530,10 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
                                 confirmSnap.holdPercent != previousConfirmHold_ ||
                                 confirmSnap.remainingSeconds != previousConfirmSeconds_;
 
+    const bool waitingClockTick = (page_ != 0 || !state.connected || !state.hasProducerState) &&
+                                  currentClockSecond != renderedClockSecond_;
     const bool triggerFullRedraw = systemStatusClosed || statusChanged || configChanged ||
-                                   !state.connected || !state.hasProducerState ||
+                                   waitingClockTick ||
                                    overspeedPhaseChanged || otaChanged || confirmChanged;
     if (triggerFullRedraw) {
 #if CONFIG_WAZE_HUD_DISPLAY_CYD_28
@@ -1466,6 +1601,7 @@ void HudRenderer::render(const HudState &state, const DeviceSettings &settings,
     previousSystemStatus_ = systemStatus;
     renderedTrip_ = tripNow;
     renderedClockMinute_ = currentClockMinute;
+    renderedClockSecond_ = currentClockSecond;
     renderedClockPhase_ = currentClockPhase;
     previousOtaActive_ = otaSnap.active;
     previousOtaProgress_ = otaSnap.progress;
@@ -1511,8 +1647,16 @@ void HudRenderer::renderRegion(const Rect &region, const HudState &state,
         renderOtaConfirm(canvas, region, confirmSnap);
     } else if (systemStatus.visible) {
         renderSystemStatus(canvas, region, systemStatus, settings);
-    } else if (!state.connected || !state.hasProducerState) {
+    } else if (page_ == 2) {
+        renderTripPage(canvas, region, layout::Width, layout::Height);
+    } else if (page_ == 1 || ((!state.connected || !state.hasProducerState) && !state.signalStale)) {
         renderStatus(canvas, region, state, settings);
+    } else if (state.signalStale) {
+        canvas.clear(colors::Background);
+        canvas.fontText(-region.x, 70 - region.y, "Dữ liệu gián đoạn", assets::kTextLarge,
+                        colors::Amber, layout::Width, true);
+        canvas.fontText(-region.x, 110 - region.y, "Chờ điện thoại gửi dữ liệu", assets::kTextMedium,
+                        colors::Muted, layout::Width, true);
     }
 #if CONFIG_WAZE_HUD_DISPLAY_CYD_28
     else if (sameRegion(region, layout::MainCluster)) renderMainCluster(canvas,state,settings);
@@ -1524,12 +1668,16 @@ void HudRenderer::renderRegion(const Rect &region, const HudState &state,
     else if (sameRegion(region, layout::Guidance)) renderGuidance(canvas,state,settings);
     else renderStreet(canvas,state,settings);
 
-    if (!otaSnap.active && !confirmSnap.confirming && !systemStatus.visible && state.connected && state.hasProducerState) {
+    if (!otaSnap.active && !confirmSnap.confirming && !systemStatus.visible && page_ == 0 &&
+        state.connected && state.hasProducerState && !state.signalStale) {
         renderMainIndicators(canvas, region, systemStatus);
+        if (settings.volume == 0)
+            canvas.fontText(230-region.x, 115-region.y,"IM LẶNG",assets::kTextSmall,colors::Amber,85,true);
         if (renderedOverspeedPhase_) {
             renderOverspeedBorder(canvas, region);
         }
     }
+    if (volumeUntilMs_ != 0 && !systemStatus.visible) renderVolume(canvas, region, layout::Width, layout::Height, settings);
     const esp_err_t result = DisplayDriver::instance().drawRegion(physicalRegion, buffer_);
     if (result != ESP_OK) ESP_LOGE(kTag, "Dirty region (%d,%d %dx%d) failed: %s",
                                    region.x,region.y,region.width,region.height,esp_err_to_name(result));
@@ -1768,6 +1916,61 @@ void HudRenderer::renderSystemStatus(Canvas &canvas, const Rect &region,
 #endif
 
 void HudRenderer::renderStatus(Canvas &canvas, const Rect &region, const HudState &state, const DeviceSettings &settings) {
+#if CONFIG_WAZE_HUD_DISPLAY_CYD_28
+    (void)settings;
+    constexpr int kBackgroundWidth = 320;
+    constexpr int kBackgroundHeight = 240;
+    const auto *background = reinterpret_cast<const uint16_t *>(
+        bumblebeeClock_ ? clockBumblebeeStart : clockOptimusStart);
+
+    // Paint only the current dirty region. The renderer deliberately keeps a
+    // region-sized DMA buffer, so a full-screen clock is composed in the same
+    // five passes as the normal HUD.
+    for (int y = 0; y < region.height; ++y) {
+        const int screenY = region.y + y;
+        if (screenY < 0 || screenY >= kBackgroundHeight) continue;
+        for (int x = 0; x < region.width; ++x) {
+            const int screenX = region.x + x;
+            if (screenX < 0 || screenX >= kBackgroundWidth) continue;
+            canvas.pixel(x, y, background[screenY * kBackgroundWidth + screenX]);
+        }
+    }
+
+    const int64_t localMillis = localClockMillis(state);
+    if (localMillis == INT64_MIN) {
+        drawClockTime(canvas, region, "--", "--");
+        canvas.fontText(0 - region.x, 202 - region.y, "Chưa đồng bộ giờ",
+                        assets::kTextMedium, colors::Amber, layout::Width, true);
+        return;
+    }
+
+    const time_t localSeconds = static_cast<time_t>(localMillis / 1000LL);
+    struct tm localTime{};
+    gmtime_r(&localSeconds, &localTime);
+    char hours[3];
+    char minutes[3];
+    std::snprintf(hours, sizeof(hours), "%02d", localTime.tm_hour);
+    std::snprintf(minutes, sizeof(minutes), "%02d", localTime.tm_min);
+    drawClockTime(canvas, region, hours, minutes);
+
+    static const char *const kWeekdays[] = {"CN", "T2", "T3", "T4", "T5", "T6", "T7"};
+    lunar_date_t lunar{};
+    const bool lunarValid = lunar_from_unix(currentClockUnixSeconds(state), &lunar);
+    char dateText[80];
+    if (lunarValid) {
+        std::snprintf(dateText, sizeof(dateText), "%s - %02d/%02d - ÂL %02d/%02d%s",
+                      kWeekdays[localTime.tm_wday], localTime.tm_mday,
+                      localTime.tm_mon + 1, lunar.day, lunar.month,
+                      lunar.leap_month ? "n" : "");
+    } else {
+        std::snprintf(dateText, sizeof(dateText), "%s - %02d/%02d",
+                      kWeekdays[localTime.tm_wday], localTime.tm_mday,
+                      localTime.tm_mon + 1);
+    }
+    canvas.fontText(0 - region.x, 190 - region.y, dateText,
+                    assets::kTextMedium, colors::Amber, layout::Width, true);
+    return;
+#endif
     canvas.clear(colors::Background);
 
     // Header bar (sy = 0..34)
@@ -2129,7 +2332,7 @@ void HudRenderer::renderAlerts(Canvas &canvas, const HudState &state, const Devi
 
     const int64_t millis = localClockMillis(state);
     const int64_t second = millis == INT64_MIN ? INT64_MIN : millis / 1000LL;
-    if (state.navigationActive && second != INT64_MIN) {
+    if (state.navigationActive && state.maneuver != Maneuver::None && second != INT64_MIN) {
         const int64_t minute = second / 60;
         const int normalizedMinute = static_cast<int>((minute % 1440 + 1440) % 1440);
         char clock[8];
@@ -2429,5 +2632,7 @@ void HudRenderer::renderStreet(Canvas &canvas, const HudState &state, const Devi
         }
     }
 }
+
+#include "display/hud_portrait.inc"
 
 }  // namespace waze_hud

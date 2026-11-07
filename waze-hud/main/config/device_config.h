@@ -33,10 +33,12 @@ struct DeviceSettings {
     bool invertColor{kDefaultInvertColor};
     bool mirrorHud{false};
     bool rotateDisplay{kDefaultRotateDisplay};
+    bool portraitDisplay{false};
+    uint8_t volume{50};
     int8_t overspeedOffsetKmh{0};
     int8_t offsetX{0};
     int8_t offsetY{0};
-    uint32_t revision{7};
+    uint32_t revision{8};
 };
 
 using HlpSendLine = void (*)(const char *line, void *context);
@@ -49,6 +51,8 @@ public:
     DeviceSettings snapshot() const;
     esp_err_t toggleRotation();
     esp_err_t toggleMirror();
+    esp_err_t setVolume(uint8_t percent, bool persist = true);
+    esp_err_t persistVolume();
     bool handleMessage(const cJSON *root, HlpSendLine send, void *context);
     void publishSchema(HlpSendLine send, void *context);
 

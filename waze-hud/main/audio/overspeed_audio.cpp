@@ -15,6 +15,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "state/hud_state_store.h"
+#include "system/shared_i2c.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -30,8 +31,6 @@ constexpr gpio_num_t kMclk = GPIO_NUM_4;
 constexpr gpio_num_t kBclk = GPIO_NUM_5;
 constexpr gpio_num_t kWs = GPIO_NUM_7;
 constexpr gpio_num_t kDout = GPIO_NUM_8;
-constexpr gpio_num_t kSda = GPIO_NUM_16;
-constexpr gpio_num_t kScl = GPIO_NUM_15;
 constexpr i2c_port_t kI2cPort = I2C_NUM_0;
 constexpr uint16_t kCodecAddresses[] = {ES8311_ADDRRES_0, 0x19};
 
@@ -45,19 +44,10 @@ constexpr TickType_t kRepeatTicks = pdMS_TO_TICKS(CONFIG_WAZE_HUD_AUDIO_REPEAT_S
 
 i2s_chan_handle_t txChannel = nullptr;
 
-float volumeScale() { return 0.85F * CONFIG_WAZE_HUD_AUDIO_VOLUME / 100.0F; }
+float volumeScale() { return 0.85F; }
 
 esp_err_t initCodec() {
-    i2c_config_t bus{};
-    bus.mode = I2C_MODE_MASTER;
-    bus.sda_io_num = kSda;
-    bus.scl_io_num = kScl;
-    bus.sda_pullup_en = GPIO_PULLUP_ENABLE;
-    bus.scl_pullup_en = GPIO_PULLUP_ENABLE;
-    bus.master.clk_speed = 100000;
-    ESP_RETURN_ON_ERROR(i2c_param_config(kI2cPort, &bus), kTag, "I2C config failed");
-    ESP_RETURN_ON_ERROR(i2c_driver_install(kI2cPort, bus.mode, 0, 0, 0), kTag,
-                        "I2C driver install failed");
+    ESP_RETURN_ON_ERROR(initSharedI2c(), kTag, "Shared I2C init failed");
 
     es8311_clock_config_t clock{};
     clock.mclk_inverted = false;
@@ -107,9 +97,11 @@ void writeFrames(const int16_t *mono, std::size_t count) {
     std::size_t done = 0;
     while (done < count) {
         const std::size_t frames = std::min<std::size_t>(kFramesPerChunk, count - done);
+        const unsigned volume = DeviceConfig::instance().snapshot().volume;
+        if (volume == 0) gpio_set_level(kAmpEnable, 1);
         for (std::size_t i = 0; i < frames; ++i) {
-            chunk[2 * i] = mono[done + i];
-            chunk[2 * i + 1] = mono[done + i];
+            chunk[2 * i] = static_cast<int16_t>(static_cast<int32_t>(mono[done + i]) * volume / 100);
+            chunk[2 * i + 1] = chunk[2 * i];
         }
         std::size_t written = 0;
         (void)i2s_channel_write(txChannel, chunk.data(), frames * 2 * sizeof(int16_t), &written,
@@ -162,6 +154,7 @@ void playVoice() {
 #endif
 
 void playAlert() {
+    if (DeviceConfig::instance().snapshot().volume == 0) return;
     gpio_set_level(kAmpEnable, 0);  // Active-low enable.
     vTaskDelay(pdMS_TO_TICKS(30));
 #if CONFIG_WAZE_HUD_AUDIO_USE_VOICE
@@ -185,7 +178,7 @@ bool isOverspeed() {
     const DeviceSettings settings = DeviceConfig::instance().snapshot();
     const int threshold =
         std::max(0, state.speedLimitKmh + static_cast<int>(settings.overspeedOffsetKmh));
-    return state.connected && state.hasProducerState && !state.signalStale &&
+    return settings.volume > 0 && state.connected && state.hasProducerState && !state.signalStale &&
            state.speedLimitKmh > 0 && state.speedKmh > threshold;
 }
 

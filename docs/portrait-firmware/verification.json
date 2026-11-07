@@ -1,0 +1,30 @@
+{
+  "version": "2.8.15-portrait.1",
+  "target": "esp32s3 / ES3C28P",
+  "date": "2026-11-07",
+  "factory": "waze_hud_es3c28p_portrait_touch_factory_20261107.bin",
+  "factoryOffset": "0x0",
+  "factorySha256": "d593e710272c5c5c6456676fcfb314df75ab650bbbeca430b37901c9f4d69ed6",
+  "app": "waze_hud_es3c28p_portrait_touch_app_20261107.bin",
+  "appSha256": "95ac2e793b7ecaf191dc45276e277ea8a191fd3ae852ad8625fddf826c4bbf4a",
+  "idf": "5.5.5",
+  "appBytes": 1962576,
+  "partitionBytes": 3145728,
+  "checks": [
+    "ESP32-S3 build and partition size check",
+    "App image checksum and validation hash",
+    "Host renderer with AddressSanitizer and UndefinedBehaviorSanitizer",
+    "21 maneuver codes and 75 alert codes rendered in portrait",
+    "614400 native/logical coordinate round trips across 8 orientations",
+    "Tap, hold, swipe, cancellation and release gesture classification",
+    "Schema with 11 items and version 8 migration retaining previous preferences",
+    "Portrait and mute persistence, invalid input, concurrent change and NVS error handling"
+  ],
+  "hardwareVerified": false,
+  "remainingDeviceChecks": [
+    "FT6336G physical touch coordinates in all orientations",
+    "Speaker volume changes and physical silence at zero",
+    "WazeMod schema display/save over real BLE",
+    "LCD appearance and frame rate on hardware"
+  ]
+}

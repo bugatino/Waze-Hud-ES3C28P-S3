@@ -18,6 +18,12 @@ namespace {
 #endif
 constexpr char kTag[] = "HLP";
 constexpr TickType_t kStaleTimeout = pdMS_TO_TICKS(3000);
+
+void preserveClock(const HudState &source, HudState &destination) {
+    destination.clockUnixSeconds = source.clockUnixSeconds;
+    destination.timezoneOffsetMinutes = source.timezoneOffsetMinutes;
+    destination.clockSyncMonotonicMs = source.clockSyncMonotonicMs;
+}
 }
 
 HlpProtocol &HlpProtocol::instance() {
@@ -53,7 +59,10 @@ void HlpProtocol::run() {
         if (BleTransport::instance().receive(event, pdMS_TO_TICKS(100))) {
             switch (event.kind) {
                 case BleEventKind::Connected: {
-                    HudState state{}; state.connected = true;
+                    const HudState previous = HudStateStore::instance().snapshot();
+                    HudState state{};
+                    state.connected = true;
+                    preserveClock(previous, state);
                     HudStateStore::instance().publish(state);
                     lastPeerActivity_ = xTaskGetTickCount();
                     break;
@@ -61,7 +70,10 @@ void HlpProtocol::run() {
                 case BleEventKind::Disconnected: {
                     decoder_.resetSession();
                     hlp_receiver_init(&receiver_, frameEntry, this);
-                    HudStateStore::instance().publish(HudState{});
+                    const HudState previous = HudStateStore::instance().snapshot();
+                    HudState state{};
+                    preserveClock(previous, state);
+                    HudStateStore::instance().publish(state);
                     break;
                 }
                 case BleEventKind::NotificationsEnabled:

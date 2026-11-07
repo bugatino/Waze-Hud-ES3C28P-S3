@@ -43,6 +43,12 @@ python -m esptool --chip esp32s3 -p COM5 -b 460800 write_flash 0x0 ES3C28P-BLE-1
 
 ## ✨ Tính năng
 
+### 🕐 Màn hình chờ đồng hồ và lịch âm
+- Khi chưa kết nối điện thoại, hoặc đã kết nối BLE nhưng Waze Mod chưa gửi dữ liệu, HUD chọn ngẫu nhiên nền Optimus hoặc Bumblebee lúc khởi động rồi hiển thị giờ, ngày dương và ngày âm thay cho hướng dẫn kết nối.
+- Giờ được đồng bộ từ điện thoại qua HLP/1 và tiếp tục chạy khi Bluetooth ngắt. Sau khi rút nguồn, HUD cần kết nối điện thoại một lần để đồng bộ lại vì board không có RTC chạy pin.
+- Ở cold boot chưa có mốc giờ, HUD hiện `--:--` và `Chưa đồng bộ giờ`; firmware không dùng build time hoặc giờ cũ làm giờ thật.
+- Ảnh nền và thuật toán lịch âm được chuyển từ [bugatino/wazehud-esp32](https://github.com/bugatino/wazehud-esp32); bảng dữ liệu lịch âm có nguồn từ gói MIT `lunar` v2.0.0 của 6tail.
+
 ### 🔊 Cảnh báo quá tốc độ bằng giọng nói
 - Phát câu **"Bạn đã quá tốc độ"** qua loa khi tốc độ vượt giới hạn + ngưỡng (chỉnh trong app) liên tục **1,5 giây**.
 - Lặp lại mỗi **4 giây** (tính từ lúc đọc xong) nếu vẫn quá tốc độ. Về tốc độ cho phép thì ngừng.
@@ -82,7 +88,7 @@ Các thiết lập xoay, lật gương được lưu vào NVS, không mất khi 
 
 ## ⚙️ Cấu hình từ Waze Mod
 
-Khi Waze Mod hỗ trợ `device_config` (HLP Schema Rev 7), HUD gửi lên 9 thiết lập:
+Khi Waze Mod hỗ trợ `device_config` (schema version 8), HUD gửi lên 11 thiết lập:
 
 | Thiết lập | Giá trị | Ý nghĩa |
 |---|---|---|
@@ -92,6 +98,8 @@ Khi Waze Mod hỗ trợ `device_config` (HLP Schema Rev 7), HUD gửi lên 9 thi
 | Đảo ngược màu | Bật / Tắt | Đảo cực tính màn hình (INVON/INVOFF) |
 | Phản chiếu HUD | Bật / Tắt | Lật ngang để chiếu hắt kính lái |
 | Xoay màn hình | Bật / Tắt | Xoay 180° theo hướng lắp |
+| Hiển thị dọc | Bật / Tắt | Tắt: ngang 320×240; bật: dọc 240×320; độc lập với đảo 180° |
+| Âm lượng loa | 0–100%, bước 5% | 0 = im lặng; vẫn hiện cảnh báo trên màn hình |
 | Ngưỡng quá tốc | −10 đến +5 km/h | Bù vào giới hạn trước khi cảnh báo (áp dụng cả cho giọng nói) |
 | Dịch ngang | −5 đến +5 px | Tinh chỉnh vị trí giao diện |
 | Dịch dọc | −5 đến +5 px | Tinh chỉnh vị trí giao diện |
@@ -111,7 +119,22 @@ Khi Waze Mod hỗ trợ `device_config` (HLP Schema Rev 7), HUD gửi lên 9 thi
 | Nút BOOT | GPIO 0 |
 | Console / log | Cổng Type-C (USB Serial/JTAG) |
 
-**Chưa hỗ trợ trong firmware**: đèn LED RGB (WS2812, GPIO 42), đo pin (GPIO 9), cảm ứng, thẻ nhớ microSD, micro.
+**Chưa hỗ trợ trong firmware**: đèn LED RGB (WS2812, GPIO 42), đo pin (GPIO 9), thẻ nhớ microSD, micro.
+
+### Chạm và vuốt (ES3C28P có FT6336G)
+
+- Chạm ngắn: đổi giữa đồng hồ và HUD. HUD tự chọn chạy tự do/dẫn đường theo dữ liệu điện thoại.
+- Giữ khoảng 0,8 giây: mở/đóng thống kê chuyến đi; chạm để quay về HUD.
+- Vuốt lên/xuống: tăng/giảm 5% mỗi khoảng 20 px, chặn ở 0–100%. Vuốt không phát sinh thao tác chạm.
+- Hiện thanh âm lượng 1,5 giây; lưu NVS khi thả tay hoặc sau 1 giây không có bước chỉnh mới. 0% tắt cả tiếng đang phát, vẫn giữ cảnh báo thị giác.
+- Tự về HUD khi có lượt rẽ cách ≤300 m, cảnh báo cách ≤100 m hoặc quá tốc độ (chỉ với dữ liệu còn hợp lệ).
+- Hướng dọc/ngang, đảo 180°, phản chiếu và âm lượng được lưu khi mất nguồn. App cần nhận lại schema sau thay đổi cấu hình bằng thao tác trên box.
+- Không tự thay ETA bằng thống kê sau mỗi 5 phút. Màn dọc dùng một thanh giờ duy nhất, ETA ghi rõ “ĐẾN NƠI”.
+- FT6336G dùng I²C 0x38 trên SDA16/SCL15, chia sẻ bus với ES8311. ES3N28P không có cảm ứng vẫn chạy HUD và cấu hình qua app; firmware ghi log nếu không tìm thấy chip cảm ứng.
+
+Firmware `2.8.15-portrait.1` đã kiểm tra bằng host preview, sanitizer, test gesture/ánh xạ, test cấu hình và build ESP-IDF. Chạm/vuốt vật lý, hướng tọa độ thực tế, loa và giao diện app vẫn cần thử trên thiết bị.
+File factory gộp nạp ở `0x0` có thể ghi đè vùng cấu hình NVS; cần chọn lại cấu hình sau khi nạp. Mất nguồn thông thường vẫn giữ cấu hình. Mặc định khi chưa có cấu hình là ngang, âm lượng 50%.
+Tham chiếu thanh ghi cảm ứng: [Espressif FT5x06 driver](https://github.com/espressif/esp-bsp/blob/master/components/lcd_touch/esp_lcd_touch_ft5x06/esp_lcd_touch_ft5x06.c).
 
 ---
 

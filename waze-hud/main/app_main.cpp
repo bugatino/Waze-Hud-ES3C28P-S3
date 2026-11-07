@@ -351,6 +351,9 @@ extern "C" void app_main() {
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(DeviceConfig::instance().init());
     ESP_ERROR_CHECK(HudStateStore::instance().init() ? ESP_OK : ESP_ERR_NO_MEM);
+    const auto touchResult = TouchSensor::instance().init();
+    if (touchResult != ESP_OK)
+        ESP_LOGW("APP", "Touch unavailable (HUD continues): %s", esp_err_to_name(touchResult));
     const esp_err_t statusResult = SystemStatus::instance().init();
     if (statusResult != ESP_OK)
         ESP_LOGW("APP", "Battery status unavailable: %s", esp_err_to_name(statusResult));
@@ -364,8 +367,6 @@ extern "C" void app_main() {
 #endif
 
     ESP_ERROR_CHECK(startOrientationButton());
-    // No-op stub on the ES3C28P (see touch/touch_sensor_stub.cpp).
-    ESP_ERROR_CHECK(TouchSensor::instance().init());
 #if CONFIG_WAZE_HUD_DISPLAY_CYD_28 && !CONFIG_WAZE_HUD_BOARD_ES3C28P
     ESP_ERROR_CHECK(startOverspeedLed());
 #endif

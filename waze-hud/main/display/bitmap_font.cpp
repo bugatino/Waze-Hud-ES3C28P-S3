@@ -872,7 +872,7 @@ void Canvas::fontText(int x, int y, const char *utf8, const assets::BitmapFont &
 }
 
 void Canvas::fontTextScaled(int x, int y, const char *utf8, const assets::BitmapFont &font,
-                            uint16_t color, float scale, int maxWidth, bool centered) {
+                            uint16_t color, float scale, int maxWidth, bool centered, bool smooth) {
     if (!utf8 || !font.glyphs || !font.bitmap4bpp || scale <= 0.0f) return;
     if (scale == 1.0f) {
         fontText(x, y, utf8, font, color, maxWidth, centered);
@@ -899,16 +899,48 @@ void Canvas::fontTextScaled(int x, int y, const char *utf8, const assets::Bitmap
         const int glyphX = x + static_cast<int>(std::round(glyph->xOffset * scale));
         const int glyphY = y + static_cast<int>(std::round(glyph->yOffset * scale));
 
-        for (int r = 0; r < destH; ++r) {
-            const int srcRow = std::min<int>(glyph->height - 1, static_cast<int>(r / scale));
-            for (int c = 0; c < destW; ++c) {
-                const int srcCol = std::min<int>(glyph->width - 1, static_cast<int>(c / scale));
-                const std::size_t pixelIndex = static_cast<std::size_t>(srcRow) * glyph->width + srcCol;
-                const uint8_t packed = font.bitmap4bpp[glyph->bitmapOffset + pixelIndex / 2U];
-                const uint8_t nibble = (pixelIndex & 1U) == 0 ? packed >> 4U : packed & 0x0FU;
-                if (nibble != 0) {
-                    alphaPixel(glyphX + c, glyphY + r, color, static_cast<uint8_t>(nibble * 17U));
+        auto sourceAlpha = [&](int column, int row) -> uint8_t {
+            if (column < 0 || column >= glyph->width || row < 0 || row >= glyph->height)
+                return 0;
+            const std::size_t pixelIndex = static_cast<std::size_t>(row) * glyph->width + column;
+            const uint8_t packed = font.bitmap4bpp[glyph->bitmapOffset + pixelIndex / 2U];
+            const uint8_t nibble = (pixelIndex & 1U) == 0 ? packed >> 4U : packed & 0x0FU;
+            return static_cast<uint8_t>(nibble * 17U);
+        };
+
+        if (!smooth) {
+            for (int r = 0; r < destH; ++r) {
+                const int sourceRow = std::min<int>(
+                    glyph->height - 1, static_cast<int>(r / scale));
+                for (int c = 0; c < destW; ++c) {
+                    const int sourceColumn = std::min<int>(
+                        glyph->width - 1, static_cast<int>(c / scale));
+                    const uint8_t alpha = sourceAlpha(sourceColumn, sourceRow);
+                    if (alpha != 0) alphaPixel(glyphX + c, glyphY + r, color, alpha);
                 }
+            }
+            x += static_cast<int>(std::round(glyph->advance * scale));
+            return;
+        }
+
+        // Interpolate glyph coverage instead of enlarging each source pixel
+        // into a hard square. This is opt-in because only the large idle clock
+        // needs the extra edge quality and its rendering budget is generous.
+        for (int r = 0; r < destH; ++r) {
+            const float sourceY = (static_cast<float>(r) + 0.5F) / scale - 0.5F;
+            const int row0 = static_cast<int>(std::floor(sourceY));
+            const float fractionY = sourceY - static_cast<float>(row0);
+            for (int c = 0; c < destW; ++c) {
+                const float sourceX = (static_cast<float>(c) + 0.5F) / scale - 0.5F;
+                const int column0 = static_cast<int>(std::floor(sourceX));
+                const float fractionX = sourceX - static_cast<float>(column0);
+                const float top = sourceAlpha(column0, row0) * (1.0F - fractionX) +
+                                  sourceAlpha(column0 + 1, row0) * fractionX;
+                const float bottom = sourceAlpha(column0, row0 + 1) * (1.0F - fractionX) +
+                                     sourceAlpha(column0 + 1, row0 + 1) * fractionX;
+                const uint8_t alpha = static_cast<uint8_t>(
+                    std::round(top * (1.0F - fractionY) + bottom * fractionY));
+                if (alpha != 0) alphaPixel(glyphX + c, glyphY + r, color, alpha);
             }
         }
         x += static_cast<int>(std::round(glyph->advance * scale));

@@ -5,26 +5,49 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <string>
+#include <vector>
+#include <deque>
+#include <cassert>
 
 static int64_t g_nowUs = 1000000;
 int64_t esp_timer_get_time() { return g_nowUs; }
 void *heap_caps_malloc(size_t n, unsigned) { return std::malloc(n); }
 void heap_caps_free(void *p) { std::free(p); }
 const char *esp_err_to_name(esp_err_t) { return "err"; }
+#ifdef _WIN32
 extern "C" struct tm *gmtime_r(const time_t *t, struct tm *r) { gmtime_s(r, t); return r; }
+#endif
+
+static std::vector<uint8_t> g_clockOptimus;
+static std::vector<uint8_t> g_clockBumblebee;
+const uint8_t *clockOptimusStart = nullptr;
+const uint8_t *clockBumblebeeStart = nullptr;
+static uint32_t g_randomValue = 0;
+uint32_t esp_random() { return g_randomValue; }
 
 namespace waze_hud {
+static std::deque<TouchEvent> g_events;
+static DeviceSettings g_config;
+DeviceConfig &DeviceConfig::instance() { static DeviceConfig c; return c; }
+DeviceSettings DeviceConfig::snapshot() const { return g_config; }
+esp_err_t DeviceConfig::setVolume(uint8_t v, bool) { g_config.volume=v; ++g_config.revision; return ESP_OK; }
+esp_err_t DeviceConfig::persistVolume() { return ESP_OK; }
+TouchSensor &TouchSensor::instance() { static TouchSensor t; return t; }
+TouchOtaConfirmStatus TouchSensor::confirmStatus() const { return {}; }
+TouchEvent TouchSensor::takeEvent() { if(g_events.empty())return TouchEvent::None; auto e=g_events.front();g_events.pop_front();return e; }
+static int g_width=320,g_height=240;
 static uint16_t g_fb[320 * 240];
 DisplayDriver &DisplayDriver::instance() { static DisplayDriver d; return d; }
 esp_err_t DisplayDriver::drawRegion(const Rect &r, uint16_t *px) {
-    if (r.x < 0 || r.y < 0 || r.x + r.width > 320 || r.y + r.height > 240) { std::printf("BAD REGION\n"); return -1; }
+    assert(r.x>=0 && r.y>=0 && r.x+r.width<=g_width && r.y+r.height<=g_height);
     for (int y = 0; y < r.height; ++y)
-        for (int x = 0; x < r.width; ++x) g_fb[(r.y + y) * 320 + r.x + x] = px[y * r.width + x];
+        for (int x = 0; x < r.width; ++x) g_fb[(r.y + y) * g_width + r.x + x] = px[y * r.width + x];
     return 0;
 }
 esp_err_t DisplayDriver::setBrightness(uint8_t) { return 0; }
-esp_err_t DisplayDriver::setOrientation(bool, bool) { return 0; }
+esp_err_t DisplayDriver::setOrientation(bool, bool, bool portrait) { g_width=portrait?240:320;g_height=portrait?320:240;return 0; }
 esp_err_t DisplayDriver::setInvertColor(bool) { return 0; }
 template <std::size_t N> void setText(std::array<char, N> &t, const char *s) { std::snprintf(t.data(), t.size(), "%s", s); }
 
@@ -49,7 +72,7 @@ static void alerts(HudState &s, std::initializer_list<AlertState> list) {
 static void dump(const char *name) {
     std::string path = std::string(getenv("OUTDIR")) + "/" + name + ".ppm";
     FILE *f = std::fopen(path.c_str(), "wb");
-    std::fprintf(f, "P6\n320 240\n255\n");
+    std::fprintf(f, "P6\n%d %d\n255\n",g_width,g_height);
     for (int i = 0; i < 320 * 240; ++i) {
         uint16_t p = g_fb[i];
         unsigned char rgb[3] = {(unsigned char)(((p >> 11) & 31) * 255 / 31), (unsigned char)(((p >> 5) & 63) * 255 / 63), (unsigned char)((p & 31) * 255 / 31)};
@@ -59,6 +82,7 @@ static void dump(const char *name) {
 }
 static void shot(const char *name, const HudState &st, DeviceSettings set = {}, SystemStatusSnapshot sys = {}) {
     std::memset(g_fb, 0x55, sizeof(g_fb));
+    g_config=set;
     HudRenderer r; r.init();
     r.render(st, set, sys);
     dump(name);
@@ -67,6 +91,17 @@ static void shot(const char *name, const HudState &st, DeviceSettings set = {}, 
 
 int main() {
     using namespace waze_hud;
+    const char *optimusPath = std::getenv("CLOCK_OPTIMUS");
+    const char *bumblebeePath = std::getenv("CLOCK_BUMBLEBEE");
+    if (!optimusPath || !bumblebeePath) return 2;
+    std::ifstream optimusAsset(optimusPath, std::ios::binary);
+    std::ifstream bumblebeeAsset(bumblebeePath, std::ios::binary);
+    g_clockOptimus.assign(std::istreambuf_iterator<char>(optimusAsset), {});
+    g_clockBumblebee.assign(std::istreambuf_iterator<char>(bumblebeeAsset), {});
+    if (g_clockOptimus.size() != 320U * 240U * sizeof(uint16_t) ||
+        g_clockBumblebee.size() != 320U * 240U * sizeof(uint16_t)) return 3;
+    clockOptimusStart = g_clockOptimus.data();
+    clockBumblebeeStart = g_clockBumblebee.data();
     g_nowUs = 1000000;  // (1000 ms / 250) % 2 == 0: the overspeed blink is in its "on" phase
     { auto s = base(); shot("n00_nav_no_alert", s); }
     { auto s = base(); alerts(s, {{AlertKind::SpeedCamera, 300, 0}}); shot("n01_one_alert", s); }
@@ -92,9 +127,41 @@ int main() {
     { auto s = base(); s.speedKmh = 130; s.speedLimitKmh = 120; shot("n11_three_digit", s); }
     { auto s = base(); s.navigationActive = false; s.maneuver = Maneuver::None; s.nextStreet.fill(0); s.eta.fill(0); shot("f00_free_drive", s); }
     { auto s = base(); s.navigationActive = false; s.maneuver = Maneuver::None; s.nextStreet.fill(0); s.eta.fill(0); alerts(s, {{AlertKind::Police, 400, 0}, {AlertKind::SpeedCamera, 1100, 0}}); shot("f01_free_drive_alerts", s); }
-    { HudState s{}; shot("s00_waiting", s); }
+    g_randomValue = 0;
+    { HudState s{}; shot("s00_waiting_optimus", s); }
+    { auto s = base(); s.connected = false; s.hasProducerState = false; shot("s00_clock_optimus", s); }
+    g_randomValue = 1;
+    { HudState s{}; shot("s00_waiting_bumblebee", s); }
+    { auto s = base(); s.connected = false; s.hasProducerState = false; shot("s00_clock_bumblebee", s); }
     { HudState s{}; s.connected = true; shot("s01_connected_waiting", s); }
     { SystemStatusSnapshot y{}; y.visible = true; y.bleConnected = true; y.bleRssiDbm = -62; shot("s02_system_status", base(), {}, y); }
     { DeviceSettings d{}; d.theme = UiTheme::Night; shot("s03_night", base(), d); }
+    DeviceSettings portrait{}; portrait.portraitDisplay=true;
+    { auto s=base(); shot("v01_navigation",s,portrait); lanes(s);shot("v02_lanes",s,portrait);
+      alerts(s,{{AlertKind::SpeedCamera,300,0},{AlertKind::Police,600,0}});shot("v03_lanes_alert",s,portrait);
+      s.maneuver=Maneuver::RoundaboutRight;s.roundaboutExit=3;shot("v04_roundabout",s,portrait);
+      s.speedKmh=130;s.speedLimitKmh=120;shot("v05_overspeed",s,portrait);
+      s.signalStale=true;s.hasProducerState=false;shot("v06_stale",s,portrait); }
+    {auto s=base();s.navigationActive=false;s.maneuver=Maneuver::None;shot("v07_free",s,portrait);
+      alerts(s,{{AlertKind::Police,300,0},{AlertKind::TrafficJam,600,0,4,18},{AlertKind::Hazard,900,0}});
+      shot("v08_free_alerts",s,portrait);}
+    {auto s=base();s.connected=false;s.hasProducerState=false;g_randomValue=0;shot("v09_clock_optimus",s,portrait);
+      g_randomValue=1;shot("v10_clock_bumblebee",s,portrait);s.clockUnixSeconds=0;shot("v11_cold_boot",s,portrait);}
+    {SystemStatusSnapshot sys{};sys.visible=true;sys.bleConnected=true;sys.bleRssiDbm=-62;shot("v12_status",base(),portrait,sys);}
+    {auto s=base();s.laneCount=16;for(int i=0;i<16;i++)s.lanes[i]={0x35,static_cast<uint8_t>(i==9?1:0)};
+      setText(s.nextStreet,"Đại lộ Võ Văn Kiệt, Phường Cầu Ông Lãnh");shot("v13_many_lanes_long_street",s,portrait);}
+    {auto s=base();s.maneuver=Maneuver::None;shot("v14_no_maneuver",s,portrait);}
+    {auto s=base(); HudRenderer r;g_config=portrait;r.init();
+      for(int m=0;m<=20;++m){s.maneuver=static_cast<Maneuver>(m);s.localGeneration++;g_nowUs+=100000;r.render(s,g_config,{});}
+      for(int a=1;a<=75;++a){s.nearestAlert={static_cast<AlertKind>(a),150,50,4,18};s.localGeneration++;g_nowUs+=100000;r.render(s,g_config,{});}
+      std::puts("All 21 maneuver codes and 75 alert codes rendered in portrait");}
+    {auto s=base();g_config=portrait;HudRenderer r;r.init();r.render(s,g_config,{});
+      g_events.push_back(TouchEvent::Tap);g_nowUs+=100000;r.render(s,g_config,{});dump("v15_tap_clock");
+      s.maneuverDistanceM=50;g_nowUs+=100000;r.render(s,g_config,{});dump("v16_auto_return");
+      g_events.push_back(TouchEvent::Hold);s.maneuverDistanceM=600;g_nowUs+=100000;r.render(s,g_config,{});dump("v17_trip");
+      g_events.push_back(TouchEvent::Tap);g_config.volume=5;g_events.push_back(TouchEvent::VolumeDown);
+      g_nowUs+=100000;r.render(s,g_config,{});g_nowUs+=100000;r.render(s,g_config,{});dump("v18_mute");
+      assert(g_config.volume==0);g_events.push_back(TouchEvent::Release);r.render(s,g_config,{});
+      g_config.portraitDisplay=false;g_nowUs+=2000000;r.render(s,g_config,{});dump("v19_switch_landscape");}
     std::puts("done");
 }

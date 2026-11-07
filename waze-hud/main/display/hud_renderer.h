@@ -15,15 +15,24 @@ namespace waze_hud {
 
 class HudRenderer {
 public:
+    HudRenderer() = default;
+    ~HudRenderer();
+    HudRenderer(const HudRenderer &) = delete;
+    HudRenderer &operator=(const HudRenderer &) = delete;
     esp_err_t init();
     void render(const HudState &state, const DeviceSettings &settings,
                 const SystemStatusSnapshot &systemStatus);
     bool animationActive() const {
-        return marqueeActive_ || clockActive_ || nextStreetMarqueeActive_ || overspeedActive_ ||
+        return adaptiveActive_ || marqueeActive_ || clockActive_ || nextStreetMarqueeActive_ || overspeedActive_ ||
                previousOtaActive_ || previousOtaConfirming_;
     }
 
 private:
+    void renderPortrait(Canvas &canvas, const Rect &region, const HudState &state,
+                        const DeviceSettings &settings, const SystemStatusSnapshot &systemStatus);
+    void renderVolume(Canvas &canvas, const Rect &region, int width, int height,
+                      const DeviceSettings &settings);
+    void renderTripPage(Canvas &canvas, const Rect &region, int width, int height);
     void renderRegion(const Rect &region, const HudState &state, const DeviceSettings &settings,
                       const SystemStatusSnapshot &systemStatus);
     void renderOtaScreen(Canvas &canvas, const Rect &region, const WifiOtaSnapshot &ota);
@@ -46,6 +55,7 @@ private:
     DeviceSettings previousSettings_{};
     SystemStatusSnapshot previousSystemStatus_{};
     int64_t renderedClockMinute_{INT64_MIN};
+    int64_t renderedClockSecond_{INT64_MIN};
     int8_t renderedClockPhase_{-1};
     uint64_t marqueeEpochMs_{0};
     int marqueeOffset_{0};
@@ -62,6 +72,13 @@ private:
     bool overspeedActive_{false};
     bool renderedOverspeedPhase_{false};
     bool clockActive_{false};
+    bool bumblebeeClock_{false};
+    uint8_t page_{0}; // 0: HUD, 1: clock, 2: trip
+    bool adaptiveActive_{false};
+    uint64_t volumeUntilMs_{0};
+    uint64_t lastVolumeChangeMs_{0};
+    bool volumeDirty_{false};
+    uint64_t lastPortraitFrameMs_{0};
     bool firstFrame_{true};
     bool tripPeek_{false};
     TripStats trip_{};

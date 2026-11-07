@@ -3,12 +3,12 @@ if(IDF_TARGET STREQUAL "esp32s3")
     # ES3C28P speaker path: ES8311 codec over legacy I2C + I2S output.
     list(APPEND waze_hud_extra_requires driver esp_driver_i2s espressif__es8311)
 endif()
-# WiFi OTA and its touch/BOOT trigger (upstream B16) are not used on any board of this
-# project: the S3 has no XPT2046 (GPIO33/36 are PSRAM pins) and the OTA page is an
-# unauthenticated upload on a fixed-password SoftAP. Both boards build inert stubs; the
-# upstream files ota/wifi_ota_manager.cpp and touch/touch_sensor.cpp stay in the tree
-# untouched so merges from upstream remain clean.
+# WiFi OTA remains disabled. Classic CYD touch stays disabled; ES3C28P uses
+# its I2C FT6336G, never the XPT2046 SPI driver whose pins conflict with PSRAM.
 set(waze_hud_board_sources "ota/wifi_ota_manager_stub.cpp" "touch/touch_sensor_stub.cpp")
+if(CONFIG_WAZE_HUD_BOARD_ES3C28P)
+    set(waze_hud_board_sources "ota/wifi_ota_manager_stub.cpp" "touch/touch_ft6336.cpp")
+endif()
 
 idf_component_register(
     SRCS
@@ -27,7 +27,12 @@ idf_component_register(
         "assets/generated_assets.cpp"
         "config/device_config.cpp"
         "system/system_status.cpp"
+        "system/shared_i2c.cpp"
+        "system/lunar_calendar.c"
         ${waze_hud_board_sources}
+    EMBED_FILES
+        "assets/clock_optimus.rgb565"
+        "assets/clock_bumblebee.rgb565"
     INCLUDE_DIRS "."
     REQUIRES bt esp_adc esp_lcd esp_driver_gpio esp_driver_ledc esp_driver_spi esp_hw_support nvs_flash json esp_netif
              ${waze_hud_extra_requires}

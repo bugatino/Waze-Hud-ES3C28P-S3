@@ -13,7 +13,7 @@ public:
     esp_err_t init();
     esp_err_t drawRegion(const Rect &region, uint16_t *pixels);
     esp_err_t setBrightness(uint8_t percent);
-    esp_err_t setOrientation(bool mirrored, bool rotated180);
+    esp_err_t setOrientation(bool mirrored, bool rotated180, bool portrait = false);
     esp_err_t setInvertColor(bool invert);
     bool ready() const { return ready_; }
 
@@ -26,6 +26,7 @@ private:
     void *rotationBuffer_{nullptr};
     bool mirrored_{false};
     bool rotated180_{false};
+    bool portrait_{false};
     bool inverted_{false};
 };
 

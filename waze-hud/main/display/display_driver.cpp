@@ -1,4 +1,5 @@
 #include "display/display_driver.h"
+#include "display/screen_transform.h"
 
 #include "config/device_config.h"
 #include "driver/gpio.h"
@@ -452,8 +453,8 @@ esp_err_t DisplayDriver::drawRegion(const Rect &region, uint16_t *pixels) {
     ESP_RETURN_ON_FALSE(ready_ && panel_ != nullptr && pixels != nullptr, ESP_ERR_INVALID_STATE,
                         kTag, "Display is not ready");
     ESP_RETURN_ON_FALSE(region.x >= 0 && region.y >= 0 && region.width > 0 && region.height > 0 &&
-                        region.x + region.width <= layout::PhysicalWidth &&
-                        region.y + region.height <= layout::PhysicalHeight,
+                        region.x + region.width <= (portrait_ ? 240 : layout::PhysicalWidth) &&
+                        region.y + region.height <= (portrait_ ? 320 : layout::PhysicalHeight),
                         ESP_ERR_INVALID_ARG, kTag, "Invalid dirty region");
     auto panel = static_cast<esp_lcd_panel_handle_t>(panel_);
     // Keep transfers in short descriptors. Rotated panels also use each row
@@ -469,6 +470,10 @@ esp_err_t DisplayDriver::drawRegion(const Rect &region, uint16_t *pixels) {
         // Compose the user-facing landscape transforms first, then rotate the
         // result clockwise into the ST77922 native 320x480 address space.
         auto mapPoint = [this](int landscapeX, int landscapeY, int &nativeX, int &nativeY) {
+#if CONFIG_WAZE_HUD_BOARD_ES3C28P
+            const auto p = toNative({landscapeX, landscapeY}, portrait_, rotated180_, mirrored_);
+            nativeX = p.x; nativeY = p.y;
+#else
             int transformedX = landscapeX;
             int transformedY = landscapeY;
             if (rotated180_) {
@@ -482,6 +487,7 @@ esp_err_t DisplayDriver::drawRegion(const Rect &region, uint16_t *pixels) {
             nativeX = transformedY;
 #endif
             nativeY = transformedX;
+#endif
         };
 
         int nativeX0 = kNativeWidth;
@@ -540,7 +546,7 @@ esp_err_t DisplayDriver::setBrightness(uint8_t percent) {
     return ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
-esp_err_t DisplayDriver::setOrientation(bool mirrored, bool rotated180) {
+esp_err_t DisplayDriver::setOrientation(bool mirrored, bool rotated180, bool portrait) {
     ESP_RETURN_ON_FALSE(ready_ && panel_ != nullptr, ESP_ERR_INVALID_STATE,
                         kTag, "Display is not ready");
     // XY is swapped for 320x170 landscape. Native X toggles the 180-degree
@@ -552,6 +558,11 @@ esp_err_t DisplayDriver::setOrientation(bool mirrored, bool rotated180) {
     // drawRegion(), so compose HUD mirror/rotation there as well.
     mirrored_ = mirrored;
     rotated180_ = rotated180;
+#if CONFIG_WAZE_HUD_BOARD_ES3C28P
+    portrait_ = portrait;
+#else
+    (void)portrait;
+#endif
     return ESP_OK;
 #else
     const bool mirrorX = rotated180;

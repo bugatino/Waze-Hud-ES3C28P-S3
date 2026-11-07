@@ -4,6 +4,7 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "nvs.h"
+#include "freertos/semphr.h"
 #include "state/hud_state_store.h"
 #include <cmath>
 #include <cstring>
@@ -13,8 +14,13 @@ namespace waze_hud {
 namespace {
 constexpr char kTag[] = "CONFIG";
 constexpr char kNamespace[] = "hud_cfg";
-constexpr int kItemCount = 9;
-constexpr uint32_t kSchemaRevision = 7;
+constexpr int kItemCount = 11;
+constexpr uint32_t kSchemaRevision = 8;
+SemaphoreHandle_t configMutex = nullptr;
+struct ConfigGuard {
+    ConfigGuard() { xSemaphoreTake(configMutex, portMAX_DELAY); }
+    ~ConfigGuard() { xSemaphoreGive(configMutex); }
+};
 
 bool validBrightness(int value) {
     return value >= 10 && value <= 100 && ((value - 10) % 5) == 0;
@@ -76,6 +82,8 @@ esp_err_t saveSettings(const DeviceSettings &settings) {
     if (result == ESP_OK) result = nvs_set_u8(nvs, "invert_col", settings.invertColor ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_u8(nvs, "mirror", settings.mirrorHud ? 1 : 0);
     if (result == ESP_OK) result = nvs_set_u8(nvs, "rotate", settings.rotateDisplay ? 1 : 0);
+    if (result == ESP_OK) result = nvs_set_u8(nvs, "portrait", settings.portraitDisplay ? 1 : 0);
+    if (result == ESP_OK) result = nvs_set_u8(nvs, "volume", settings.volume);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "over_offset", settings.overspeedOffsetKmh);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "offset_x", settings.offsetX);
     if (result == ESP_OK) result = nvs_set_i8(nvs, "offset_y", settings.offsetY);
@@ -114,7 +122,13 @@ DeviceConfig &DeviceConfig::instance() {
 }
 
 esp_err_t DeviceConfig::init() {
+    active_ = DeviceSettings{};
+    configMutex = xSemaphoreCreateMutex();
+    if (!configMutex) return ESP_ERR_NO_MEM;
     active_.brightness = CONFIG_WAZE_HUD_DEFAULT_BRIGHTNESS;
+#ifdef CONFIG_WAZE_HUD_AUDIO_VOLUME
+    active_.volume = ((CONFIG_WAZE_HUD_AUDIO_VOLUME + 2) / 5) * 5;
+#endif
     nvs_handle_t nvs;
     const esp_err_t opened = nvs_open(kNamespace, NVS_READONLY, &nvs);
     if (opened == ESP_ERR_NVS_NOT_FOUND) {
@@ -136,6 +150,9 @@ esp_err_t DeviceConfig::init() {
     if (nvs_get_u8(nvs, "invert_col", &byte) == ESP_OK) active_.invertColor = byte != 0;
     if (nvs_get_u8(nvs, "mirror", &byte) == ESP_OK) active_.mirrorHud = byte != 0;
     if (nvs_get_u8(nvs, "rotate", &byte) == ESP_OK) active_.rotateDisplay = byte != 0;
+    if (nvs_get_u8(nvs, "portrait", &byte) == ESP_OK) active_.portraitDisplay = byte != 0;
+    if (nvs_get_u8(nvs, "volume", &byte) == ESP_OK && byte <= 100)
+        active_.volume = ((byte + 2) / 5) * 5;
     int8_t offset = 0;
     if (nvs_get_i8(nvs, "over_offset", &offset) == ESP_OK && offset >= -10 && offset <= 5)
         active_.overspeedOffsetKmh = offset;
@@ -171,6 +188,7 @@ DeviceSettings DeviceConfig::snapshot() const {
 }
 
 esp_err_t DeviceConfig::toggleRotation() {
+    ConfigGuard guard;
     DeviceSettings candidate = snapshot();
     candidate.rotateDisplay = !candidate.rotateDisplay;
     ++candidate.revision;
@@ -190,6 +208,7 @@ esp_err_t DeviceConfig::toggleRotation() {
 }
 
 esp_err_t DeviceConfig::toggleMirror() {
+    ConfigGuard guard;
     DeviceSettings candidate = snapshot();
     candidate.mirrorHud = !candidate.mirrorHud;
     ++candidate.revision;
@@ -206,6 +225,27 @@ esp_err_t DeviceConfig::toggleMirror() {
              static_cast<unsigned long>(candidate.revision));
     HudStateStore::instance().refresh();
     return ESP_OK;
+}
+
+esp_err_t DeviceConfig::setVolume(uint8_t percent, bool persist) {
+    if (percent > 100) return ESP_ERR_INVALID_ARG;
+    ConfigGuard guard;
+    DeviceSettings candidate = snapshot();
+    if (candidate.volume == percent) return ESP_OK;
+    candidate.volume = percent;
+    ++candidate.revision;
+    if (persist) {
+        const esp_err_t result = saveSettings(candidate);
+        if (result != ESP_OK) return result;
+    }
+    taskENTER_CRITICAL(&lock_); active_ = candidate; taskEXIT_CRITICAL(&lock_);
+    HudStateStore::instance().refresh();
+    return ESP_OK;
+}
+
+esp_err_t DeviceConfig::persistVolume() {
+    ConfigGuard guard;
+    return saveSettings(snapshot());
 }
 
 void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
@@ -245,7 +285,15 @@ void DeviceConfig::publishSchema(HlpSendLine send, void *context) {
     root = schemaItem(settings.revision, "mirror_hud", "toggle", "Phan chieu HUD");
     cJSON_AddBoolToObject(root, "value", settings.mirrorHud); sendJson(root, send, context);
 
-    root = schemaItem(settings.revision, "rotate_display", "toggle", "Xoay 180 do (USB ben phai)");
+    root = schemaItem(settings.revision, "portrait_display", "toggle", "Hien thi doc (240x320)");
+    cJSON_AddBoolToObject(root, "value", settings.portraitDisplay); sendJson(root, send, context);
+
+    root = schemaItem(settings.revision, "volume", "slider", "Am luong loa (0 = im lang)");
+    cJSON_AddNumberToObject(root, "value", settings.volume);
+    cJSON_AddNumberToObject(root, "min", 0); cJSON_AddNumberToObject(root, "max", 100);
+    cJSON_AddNumberToObject(root, "step", 5); sendJson(root, send, context);
+
+    root = schemaItem(settings.revision, "rotate_display", "toggle", "Dao huong 180 do");
     cJSON_AddBoolToObject(root, "value", settings.rotateDisplay); sendJson(root, send, context);
 
     root = schemaItem(settings.revision, "overspeed_offset", "slider", "Nguong canh bao toc do");
@@ -323,6 +371,12 @@ bool DeviceConfig::handleMessage(const cJSON *root, HlpSendLine send, void *cont
             bit = 1U << 4; valid = exactInteger(value, -5, 5, integer); if (valid) pending.draft.offsetY = integer;
         } else if (std::strcmp(id->valuestring, "fixed_brightness") == 0) {
             bit = 1U << 8; valid = cJSON_IsBool(value); if (valid) pending.draft.fixedBrightness = cJSON_IsTrue(value);
+        } else if (std::strcmp(id->valuestring, "portrait_display") == 0) {
+            bit = 1U << 9; valid = cJSON_IsBool(value);
+            if (valid) pending.draft.portraitDisplay = cJSON_IsTrue(value);
+        } else if (std::strcmp(id->valuestring, "volume") == 0) {
+            bit = 1U << 10; valid = exactInteger(value, 0, 100, integer) && integer % 5 == 0;
+            if (valid) pending.draft.volume = static_cast<uint8_t>(integer);
         } else valid = false;
         if ((pending.mask & bit) != 0) valid = false;
         if (!valid) {
@@ -346,7 +400,13 @@ bool DeviceConfig::handleMessage(const cJSON *root, HlpSendLine send, void *cont
             pending = {};
             return true;
         }
+        ConfigGuard guard;
         const DeviceSettings current = snapshot();
+        if (pending.draft.revision != current.revision) {
+            sendAck(pending.id, false, current.revision, nullptr, "configuration changed; refresh schema", send, context);
+            pending = {};
+            return true;
+        }
         bool brightnessLocked = false;
         if (!pending.draft.fixedBrightness && pending.draft.brightness != current.brightness) {
             pending.draft.brightness = current.brightness;

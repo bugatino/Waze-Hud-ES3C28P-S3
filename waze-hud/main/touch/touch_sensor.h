@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include <cstdint>
+#include "touch/gesture.h"
 
 namespace waze_hud {
 
@@ -18,6 +19,7 @@ public:
     esp_err_t init();
     TouchOtaConfirmStatus confirmStatus() const;
     bool isTouched() const;
+    TouchEvent takeEvent();
 
 private:
     TouchSensor() = default;
